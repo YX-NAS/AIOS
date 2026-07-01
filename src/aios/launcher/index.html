@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AIOS Launcher</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <div class="launcher-shell">
+      <header class="launcher-hero">
+        <div>
+          <div class="launcher-eyebrow">AI Development Operating System</div>
+          <h1>多项目启动器</h1>
+          <p>先登记项目，再启动或打开对应项目工作区。每个项目继续保持独立的 `.aios/` 状态。</p>
+        </div>
+        <div class="hero-actions">
+          <div id="refreshMeta" class="small-note">自动刷新：开启</div>
+          <button id="refreshButton" class="button secondary">刷新状态</button>
+        </div>
+      </header>
+
+      <section class="launcher-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">添加项目</div>
+              <div class="panel-subtitle">手动登记一个项目目录到本地工作台</div>
+            </div>
+          </div>
+          <form id="projectForm" class="stack-form">
+            <label>
+              <span>项目目录</span>
+              <input id="projectRoot" name="root" placeholder="/Users/you/path/to/project" required />
+            </label>
+            <label>
+              <span>显示名称</span>
+              <input id="projectName" name="name" placeholder="默认使用目录名" />
+            </label>
+            <button type="submit" class="button primary wide">添加项目</button>
+          </form>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">项目列表</div>
+              <div class="panel-subtitle">启动、停止、打开项目工作区</div>
+            </div>
+          </div>
+          <div id="projectList" class="project-list"></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">全局模型库</div>
+            <div class="panel-subtitle">统一设置可用模型、任务类型和推荐优先级，所有项目共用</div>
+          </div>
+          <button id="resetModelsButton" type="button" class="button ghost">恢复默认</button>
+        </div>
+        <form id="modelCreateForm" class="model-create-form">
+          <input name="model_id" placeholder="模型 ID，例如 gpt-5.5-coder" required />
+          <input name="label" placeholder="显示名称，例如 GPT-5.5 Coder" />
+          <input name="provider" placeholder="提供方，例如 openai" />
+          <input name="taskTypes" placeholder="任务类型，例如 bug_fix, testing" />
+          <input name="rank" type="number" min="1" value="1" />
+          <label class="model-toggle model-create-toggle">
+            <input type="checkbox" name="enabled" checked />
+            <span>启用</span>
+          </label>
+          <button type="submit" class="button primary">新增模型</button>
+        </form>
+        <div id="modelList" class="model-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">操作反馈</div>
+            <div class="panel-subtitle">最近一次动作的结果会显示在这里</div>
+          </div>
+        </div>
+        <div id="activityLog" class="activity-log">等待操作。</div>
+      </section>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

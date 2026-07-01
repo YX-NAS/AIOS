@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AIOS Web UI</title>
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">AI</div>
+          <div>
+            <div class="brand-title">AIOS</div>
+            <div class="brand-subtitle">Local Control Console</div>
+          </div>
+        </div>
+        <nav class="nav-list">
+          <a href="#overview" class="nav-item">Project</a>
+          <a href="#scan" class="nav-item">Scan</a>
+          <a href="#tasks" class="nav-item">Tasks</a>
+          <a href="#inspector" class="nav-item">Routing</a>
+          <a href="#packs" class="nav-item">Packs</a>
+          <a href="#activity" class="nav-item">Activity</a>
+        </nav>
+        <div class="sidebar-note">
+          <div class="sidebar-label">Root</div>
+          <code id="rootPath">-</code>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">AI Development Operating System</div>
+            <h1>项目控制台</h1>
+            <p id="statusText">正在加载项目状态...</p>
+          </div>
+          <div class="topbar-actions">
+            <span id="statusPill" class="status-pill">Checking</span>
+            <button id="refreshButton" class="button secondary">刷新</button>
+            <button id="scanButton" class="button primary">重新扫描</button>
+          </div>
+        </header>
+
+        <section id="overview" class="overview-grid">
+          <article class="metric-card">
+            <div class="metric-label">任务总数</div>
+            <div id="metricTasks" class="metric-value">0</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">未完成</div>
+            <div id="metricOpen" class="metric-value">0</div>
+          </article>
+          <article class="metric-card accent">
+            <div class="metric-label">已完成</div>
+            <div id="metricDone" class="metric-value">0</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">已索引文件</div>
+            <div id="metricFiles" class="metric-value">0</div>
+          </article>
+        </section>
+
+        <section class="workspace-grid">
+          <section class="content-column">
+            <article id="scan" class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">项目状态</div>
+                  <div class="panel-subtitle">初始化、扫描和技术栈概览</div>
+                </div>
+              </div>
+              <div id="initEmptyState" class="empty-state hidden">
+                <h2>当前目录还没有初始化</h2>
+                <p>先创建 `.aios/` 目录，后面任务、路由和 Context Pack 才能工作。</p>
+                <form id="initForm" class="stack-form">
+                  <label>
+                    <span>项目名称</span>
+                    <input name="name" placeholder="AIOS" />
+                  </label>
+                  <label>
+                    <span>项目类型</span>
+                    <input name="type" placeholder="cli-tool" />
+                  </label>
+                  <button type="submit" class="button primary wide">初始化项目</button>
+                </form>
+              </div>
+              <div id="projectStatus" class="project-status hidden">
+                <div class="tag-row">
+                  <span class="tag">Initialized</span>
+                  <span id="languageTags" class="tag-group"></span>
+                  <span id="frameworkTags" class="tag-group"></span>
+                </div>
+                <p class="inline-note">建议每次开始任务前先扫描一次，保持索引和上下文是新的。</p>
+              </div>
+            </article>
+
+            <article id="tasks" class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">任务台</div>
+                  <div class="panel-subtitle">创建任务、选择任务、查看当前建议模型</div>
+                </div>
+              </div>
+              <form id="goalPlanForm" class="task-form goal-form">
+                <input name="goal" placeholder="例如：完成聊天接口时间上下文修复并验证上线风险" required />
+                <select name="priority">
+                  <option value="high">high</option>
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                </select>
+                <button type="submit" class="button secondary">目标拆分</button>
+              </form>
+              <form id="taskForm" class="task-form">
+                <input name="title" placeholder="例如：修复登录报错并补回归测试" required />
+                <select name="priority">
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="low">low</option>
+                </select>
+                <button type="submit" class="button primary">创建任务</button>
+              </form>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Task</th>
+                      <th>状态</th>
+                      <th>类型</th>
+                      <th>推荐模型</th>
+                    </tr>
+                  </thead>
+                  <tbody id="taskTableBody"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article id="packs" class="panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">Context Packs</div>
+                  <div class="panel-subtitle">最近生成的上下文包</div>
+                </div>
+              </div>
+              <div id="packList" class="pack-list"></div>
+            </article>
+          </section>
+
+          <aside id="inspector" class="inspector-column">
+            <article class="panel inspector-panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">任务检查器</div>
+                  <div class="panel-subtitle">路由、Pack 和完成回写</div>
+                </div>
+              </div>
+              <div id="taskEmpty" class="empty-state compact">
+                <h2>还没有选中任务</h2>
+                <p>从左侧任务表选择一个任务，这里会显示详细信息和操作入口。</p>
+              </div>
+              <div id="taskInspector" class="hidden">
+                <div class="inspector-block">
+                  <div class="small-label">当前任务</div>
+                  <h2 id="taskTitle">-</h2>
+                  <p id="taskMeta" class="muted">-</p>
+                </div>
+                <div class="inspector-block">
+                  <div class="small-label">验收标准</div>
+                  <ul id="acceptanceList" class="simple-list"></ul>
+                </div>
+                <div class="inspector-block">
+                  <div class="small-label">模型路由</div>
+                  <div id="routeCard" class="route-card">选择任务后自动加载路由建议。</div>
+                </div>
+                <form id="packForm" class="stack-form slim">
+                  <label>
+                    <span>生成 Pack 模型</span>
+                    <input name="model" placeholder="例如：gpt-5.5" />
+                  </label>
+                  <button type="submit" class="button secondary wide">生成 Context Pack</button>
+                </form>
+                <button id="copyHandoffButton" type="button" class="button secondary wide">生成并复制任务交接单</button>
+                <button id="copyCurrentPackButton" type="button" class="button subtle wide hidden">复制当前任务最新 Context Pack</button>
+                <form id="completeForm" class="stack-form slim">
+                  <label>
+                    <span>完成总结</span>
+                    <textarea name="summary" rows="4" placeholder="例如：修复登录报错，补充回归测试并验证通过"></textarea>
+                  </label>
+                  <button type="submit" class="button primary wide">标记完成</button>
+                </form>
+              </div>
+            </article>
+
+            <article id="activity" class="panel activity-panel">
+              <div class="panel-header">
+                <div>
+                  <div class="panel-title">操作反馈</div>
+                  <div class="panel-subtitle">最近一次动作的结果会显示在这里</div>
+                </div>
+              </div>
+              <div id="activityLog" class="activity-log">等待操作。</div>
+            </article>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

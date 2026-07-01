@@ -1,0 +1,163 @@
+# AIOS 多模型开发中枢
+
+AIOS 是一个本地文件系统型本地开发中枢，当前同时提供 CLI 和 Web UI，用来为软件项目生成 `.aios/` 知识目录、扫描项目结构、管理开发任务、推荐模型路由，并生成可复制给不同 AI 模型的 Context Pack。
+
+详细中文操作说明见 [docs/AIOS_使用说明操作手册.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/AIOS_使用说明操作手册.md)。
+
+## MVP 边界
+
+当前版本专注可交付的本地 CLI + Web UI：
+
+- 初始化 `.aios/` 项目记忆目录；
+- 扫描项目文件并生成 `file-index.json` 和扫描报告；
+- 创建、查看、完成任务；
+- 根据任务类型和 `model-routing.yaml` 推荐模型；
+- 生成模型专用 Context Pack；
+- 提供本地浏览器可视化控制台；
+- 用文件系统保存状态，不直接调用真实模型、不自动改业务代码。
+
+当前推荐的执行方式是半自动流程：
+
+1. 先把目标拆成任务；
+2. 按任务生成 Context Pack；
+3. 人工切换 `ccswitch` 到推荐模型；
+4. 在 Codex 或 Claude Code 中执行；
+5. 完成后回写 AIOS。
+
+后续会在这个流程稳定之后，再补自动调度和自动切换。
+
+## 安装与运行
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+如果本地 `pip` 较老，建议先升级：
+
+```bash
+python -m pip install --upgrade pip setuptools wheel
+```
+
+也可以不安装，直接用模块方式运行：
+
+```bash
+PYTHONPATH=src python -m aios.main status
+```
+
+## 常用命令
+
+```bash
+aios init --name my-project --type web-app
+aios scan
+aios task create "实现登录功能"
+aios task plan "完成聊天接口时间上下文修复"
+aios task list
+aios task show TASK-20260630-001
+aios route TASK-20260630-001
+aios pack TASK-20260630-001 --model gpt-5.5
+aios handoff TASK-20260630-001 --model gpt-5.5
+aios complete TASK-20260630-001 --summary "完成登录功能并通过测试"
+aios status
+aios web --port 8765
+aios launcher --port 8755
+```
+
+## Web UI
+
+如果你只操作一个项目，继续使用单项目 Web UI：
+
+启动本地 Web UI：
+
+```bash
+aios --root /path/to/project web --port 8765
+```
+
+如果希望一条命令后台启动并自动打开浏览器：
+
+```bash
+./scripts/start_local_webui.sh /path/to/project
+```
+
+在 macOS 上也可以直接双击或拖拽项目文件夹到 [AIOS_启动WebUI.command](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/AIOS_启动WebUI.command)。
+
+停止本地服务：
+
+```bash
+./scripts/stop_local_webui.sh /path/to/project
+```
+
+打开浏览器访问：
+
+```text
+http://127.0.0.1:8765
+```
+
+当前 Web UI 支持：
+
+- 初始化 `.aios/`
+- 扫描项目
+- 按目标自动拆分任务
+- 创建任务
+- 查看任务和路由建议
+- 生成 Context Pack
+- 生成并复制任务交接单
+- 标记任务完成
+
+## Multi-Project Launcher
+
+如果你要同时管理多个项目，使用 launcher 首页：
+
+```bash
+aios launcher --port 8755
+```
+
+打开浏览器访问：
+
+```text
+http://127.0.0.1:8755
+```
+
+launcher 首页负责：
+
+- 手动登记多个项目目录
+- 维护全局模型库
+- 新增、编辑、删除自定义模型
+- 一键恢复默认模型库
+- 查看每个项目是否已初始化、是否正在运行
+- 查看每个项目的任务数、文件索引数和最近目标/任务
+- 查看每个项目启用的模型数量
+- 启动或停止单项目实例
+- 触发项目扫描
+- 跳转到对应项目自己的 Web UI
+
+launcher 首页会自动轮询刷新项目状态和摘要数据。
+
+模型库编辑统一在 launcher 首页进行。你可以修改模型 ID、显示名称、提供方、启用状态、适合任务类型和优先级；也可以新增模型、删除模型，或恢复默认模型库。后续所有项目的新建任务、目标拆解和路由推荐都会按这套全局模型库生效。
+
+每个项目仍然保持独立 `.aios/`，互不串扰。
+
+`aios task plan` 现在支持两类更实用的拆解：
+
+- 对 bug 类目标，按定位、修复、回归、记录拆解；
+- 对“开发某系统，包含模块 A/B/C”类目标，按系统边界、接口设计、模块实现、测试、文档拆解。
+
+## 测试
+
+```bash
+python -m pytest
+```
+
+## 交付验收
+
+第一版验收通过条件：
+
+- `aios init` 能生成 `.aios/`、配置、上下文、任务、规则和路由文件；
+- `aios scan` 能忽略常见构建目录并输出文件索引；
+- `aios task create` 能生成稳定任务 ID、分类、推荐模型和验收标准；
+- `aios route` 能说明推荐模型和兜底模型；
+- `aios pack` 能生成可读 Context Pack；
+- `aios complete` 能更新任务状态、`changelog.md` 和 `memory.md`；
+- `aios web` 能启动本地可视化控制台；
+- `python -m pytest` 通过。
