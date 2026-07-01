@@ -14,6 +14,7 @@ def test_init_creates_aios_files(tmp_path: Path) -> None:
     assert (aios_dir / "project.yaml").exists()
     assert (aios_dir / "context.md").exists()
     assert (aios_dir / "tasks.json").exists()
+    assert (aios_dir / "executions.json").exists()
     assert (aios_dir / "model-routing.json").exists()
     assert (aios_dir / "context-packs").is_dir()
     assert (aios_dir / "handoffs").is_dir()

@@ -51,6 +51,11 @@ def initialize_project(root: Path, name: str, project_type: str, force: bool = F
         write_json(tasks_json, {"tasks": []})
         created.append(tasks_json)
 
+    executions_json = path / "executions.json"
+    if force or not executions_json.exists():
+        write_json(executions_json, {"executions": []})
+        created.append(executions_json)
+
     routing_json = path / "model-routing.json"
     if force or not routing_json.exists():
         write_json(routing_json, {"routing_rules": DEFAULT_ROUTING})

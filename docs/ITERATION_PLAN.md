@@ -6,12 +6,12 @@
 
 MVP 已交付，核心功能完整：
 
-- CLI：init / scan / task / route / pack / complete / status / web / launcher
-- 单项目 Web UI：项目状态、任务台、路由、Context Pack、完成回写
-- 多项目 Launcher：项目登记、全局模型库（表格 + 勾选框）、一键启停
+- CLI：init / scan / task / route / pack / run / handoff / complete / status / web / launcher
+- 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、完成回写
+- 多项目 Launcher：项目登记、全局模型库（表格 + 勾选框）、一键启停、执行摘要
 - 暗黑科技风 UI 主题
 
-已知短板：测试覆盖薄弱、文档滞后、半自动流程人工步骤多、模型路由策略简单。
+已知短板：仍需人工切换 `ccswitch`、尚未自动调用 Codex / Claude Code、自动化调度尚未落地。
 
 ---
 
@@ -51,10 +51,12 @@ MVP 已交付，核心功能完整：
 
 | 编号 | 任务 | 完成标准 |
 |------|------|---------|
-| P3-1 | CC Switch 集成 | `aios route` 输出 ccswitch 兼容 JSON，一键切换模型 |
-| P3-2 | `aios run` 自动执行 | 选模型 → 生成 Pack → 调用模型 API → 回写，全链路闭环 |
-| P3-3 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
-| P3-4 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
+| P3-0 | 半自动执行稳定层 | `.aios/executions.json` 可追踪 prepared / running / finished；单项目 Web UI 和 launcher 可查看执行摘要 |
+| P3-1 | 统一手动执行入口 | `aios run --manual` / `run finish` 跑通一条完整半自动执行链路 |
+| P3-2 | CC Switch 集成 | 输出 `ccswitch` 兼容信息或适配器输入，为后续自动切换做准备 |
+| P3-3 | `aios run` 自动执行 | 选模型 → 生成 Pack → 调用模型 API → 回写，全链路闭环 |
+| P3-4 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
+| P3-5 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
 
 ### P4 — 平台化
 
@@ -69,11 +71,21 @@ MVP 已交付，核心功能完整：
 
 ## 近期重点（接下来 2 周）
 
-1. P0-1：补测试，确保 pytest 全绿
-2. P0-2：文档同步
-3. P1-1：Context Pack 一键复制（Web UI 已有按钮，确认功能完整）
-4. P1-2：任务状态筛选
-5. P1-5：Launcher 项目卡片折叠
+1. P3-0：执行记录和执行状态稳定化
+2. P3-1：统一手动执行入口与 Web UI 主路径切换
+3. P3-2：`ccswitch` 输出适配层评估与落地
+4. P3-3：自动执行可行性原型
+5. P0-2：继续补操作手册和验收说明
+
+## 下一阶段实施目标
+
+下一阶段默认进入 `P3-2 ccswitch` 适配层，目标是：
+
+- 把当前任务执行信息导出成稳定 JSON
+- 让用户不再手工抄模型名、fallback、Pack 路径和交接单路径
+- 先做标准化适配输出，不直接假设 `ccswitch` 有稳定 CLI
+
+详细开发方案和测试计划见 [docs/P3_2_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_2_DESIGN.md)。
 
 ---
 
@@ -85,3 +97,4 @@ MVP 已交付，核心功能完整：
 | 2026-07-01 | 暗黑科技风主题 | 与"AI 开发中枢"定位匹配，区别于普通管理后台 |
 | 2026-07-01 | 添加项目与项目列表上下排列 | 表单宽度不够且双列布局不对称，单列更整洁 |
 | 2026-07-01 | 框体平铺去掉 max-width | 大屏幕上留白过多，信息密度优先 |
+| 2026-07-01 | `run` 成为半自动执行主入口 | `handoff` 只适合生成交接文档，不适合承载执行状态机 |

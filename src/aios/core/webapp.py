@@ -10,7 +10,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from aios.core.context_builder import build_context_pack
-from aios.core.scoring import load_scores, model_score_summary, save_score
+from aios.core.executions import execution_summary, finish_manual_execution, latest_execution_for_task, prepare_manual_execution
+from aios.core.scoring import load_scores, model_score_summary
 from aios.core.handoff import build_handoff
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
@@ -18,7 +19,6 @@ from aios.core.project import initialize_project
 from aios.core.router import log_routing, route_task
 from aios.core.scanner import scan_project
 from aios.core.tasks import create_task, get_task, load_tasks, plan_goal
-from aios.core.workflow import finalize_task
 from aios.utils.json_utils import read_json
 
 
@@ -54,7 +54,15 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json({"tasks": load_tasks_safe(self.project_root)})
                 if parsed.path.startswith("/api/tasks/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
-                    return self._send_json({"task": get_task(self.project_root, task_id)})
+                    return self._send_json(
+                        {
+                            "task": get_task(self.project_root, task_id),
+                            "execution": latest_execution_for_task(self.project_root, task_id),
+                        }
+                    )
+                if parsed.path.startswith("/api/run/task/"):
+                    task_id = parsed.path.rsplit("/", 1)[-1]
+                    return self._send_json({"execution": latest_execution_for_task(self.project_root, task_id)})
                 if parsed.path.startswith("/api/route/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     route = route_task(get_task(self.project_root, task_id), self.project_root)
@@ -171,15 +179,55 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         },
                         status=HTTPStatus.CREATED,
                     )
+                if parsed.path == "/api/run/manual":
+                    result = prepare_manual_execution(
+                        self.project_root,
+                        payload["task_id"],
+                        payload.get("model") or None,
+                        bool(payload.get("refresh_pack")),
+                        bool(payload.get("start")),
+                        (payload.get("note") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Manual execution prepared.",
+                            "task": result["task"],
+                            "route": result["route"],
+                            "handoff": result["handoff"],
+                            "execution": result["execution"],
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/run/finish":
+                    summary = (payload.get("summary") or "").strip()
+                    if not summary:
+                        raise ValueError("Completion summary is required.")
+                    result = finish_manual_execution(
+                        self.project_root,
+                        payload["task_id"],
+                        summary,
+                        actual_model=(payload.get("actual_model") or "").strip() or None,
+                        test_command=(payload.get("test_command") or "").strip() or None,
+                        test_result=(payload.get("test_result") or "").strip() or None,
+                        score=int(payload["score"]) if payload.get("score") is not None else None,
+                        score_note=(payload.get("score_note") or "").strip() or None,
+                    )
+                    return self._send_json({"message": "Task completed.", **result})
                 if parsed.path == "/api/complete":
                     summary = (payload.get("summary") or "").strip()
                     if not summary:
                         raise ValueError("Completion summary is required.")
-                    task = finalize_task(self.project_root, payload["task_id"], summary)
-                    score = payload.get("score")
-                    if score is not None:
-                        save_score(self.project_root, task["id"], task.get("recommended_model", "unknown"), int(score), payload.get("score_note"), task.get("type"))
-                    return self._send_json({"message": "Task completed.", "task": task})
+                    result = finish_manual_execution(
+                        self.project_root,
+                        payload["task_id"],
+                        summary,
+                        actual_model=(payload.get("actual_model") or "").strip() or None,
+                        test_command=(payload.get("test_command") or "").strip() or None,
+                        test_result=(payload.get("test_result") or "").strip() or None,
+                        score=int(payload["score"]) if payload.get("score") is not None else None,
+                        score_note=(payload.get("score_note") or "").strip() or None,
+                    )
+                    return self._send_json({"message": "Task completed.", **result})
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")
             except FileNotFoundError as exc:
                 self._send_error(HTTPStatus.NOT_FOUND, str(exc))
@@ -210,6 +258,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "packs": list_packs(self.project_root) if initialized else [],
                 "handoffs": list_handoffs(self.project_root) if initialized else [],
                 "enabled_model_count": model_summary()["enabled_model_count"],
+                **(execution_summary(self.project_root) if initialized else execution_summary_empty()),
             }
 
         def _read_json(self) -> dict:
@@ -259,18 +308,32 @@ def load_tasks_safe(root: Path) -> list[dict]:
         return []
 
 
+def execution_summary_empty() -> dict:
+    return {
+        "execution_count": 0,
+        "active_execution_count": 0,
+        "latest_execution_status": None,
+        "last_execution_updated_at": None,
+    }
+
+
 def list_packs(root: Path) -> list[dict]:
     pack_dir = aios_path(root) / "context-packs"
     if not pack_dir.exists():
         return []
+    tasks_by_id = {task["id"]: task for task in load_tasks_safe(root)}
     packs = []
     for path in sorted(pack_dir.glob("*.md"), reverse=True):
+        task_id = pack_task_id(path.name)
+        task = tasks_by_id.get(task_id) if task_id else None
         packs.append(
             {
                 "name": path.name,
+                "display_name": f"{task['title']} ({path.name})" if task else path.name,
                 "path": str(path.relative_to(root)),
                 "size_bytes": path.stat().st_size,
-                "task_id": pack_task_id(path.name),
+                "task_id": task_id,
+                "task_title": task.get("title") if task else None,
             }
         )
     return packs
@@ -304,11 +367,15 @@ def get_pack_content(root: Path, pack_name: str) -> dict:
     path = aios_path(root) / "context-packs" / pack_name
     if not path.exists():
         raise FileNotFoundError(f"Context pack not found: {pack_name}")
+    task_id = pack_task_id(pack_name)
+    task = next((item for item in load_tasks_safe(root) if item["id"] == task_id), None) if task_id else None
     return {
         "name": pack_name,
+        "display_name": f"{task['title']} ({pack_name})" if task else pack_name,
         "path": str(path.relative_to(root)),
         "content": path.read_text(encoding="utf-8"),
-        "task_id": pack_task_id(pack_name),
+        "task_id": task_id,
+        "task_title": task.get("title") if task else None,
     }
 
 

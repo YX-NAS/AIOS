@@ -123,8 +123,39 @@ code { font-family: "SF Mono", "JetBrains Mono", "Fira Code", monospace; }
 .topbar, .overview-grid, .workspace-grid { width: 100%; }
 
 .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.topbar-copy { display: grid; gap: 8px; min-width: 0; }
+.headline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .topbar h1 { margin: 2px 0 0; font-size: clamp(32px, 4vw, 44px); line-height: 1; font-weight: 700; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.topbar p { margin: 0; max-width: 720px; font-size: 13px; line-height: 1.45; color: var(--text-dim); }
+.project-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  max-width: min(56vw, 760px);
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 255, 0.24);
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.12), rgba(124, 77, 255, 0.12));
+  box-shadow: 0 0 20px rgba(0, 229, 255, 0.12);
+  color: var(--text);
+  font-size: clamp(16px, 2vw, 22px);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.topbar p {
+  margin: 0;
+  max-width: 820px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  white-space: pre-line;
+}
 
 .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
@@ -337,6 +368,35 @@ tr.task-row { cursor: pointer; transition: background 0.2s; }
 tr.task-row:hover { background: rgba(0, 229, 255, 0.03); }
 tr.task-row.active td { color: var(--accent); background: rgba(0, 229, 255, 0.05); }
 
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  min-height: 36px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-button {
+  min-height: 30px;
+  padding: 0 12px;
+}
+
+.pagination-page {
+  min-width: 48px;
+  text-align: center;
+  color: var(--text);
+  font-weight: 600;
+}
+
 /* ===== Packs ===== */
 .pack-list { display: grid; gap: 10px; }
 .pack-item, .route-card, .activity-log {
@@ -383,5 +443,18 @@ tr.task-row.active td { color: var(--accent); background: rgba(0, 229, 255, 0.05
 @media (max-width: 640px) {
   .main-panel { padding: 18px; }
   .topbar { flex-direction: column; }
+  .headline-row { align-items: flex-start; }
+  .project-badge {
+    max-width: 100%;
+    min-height: 38px;
+    font-size: 15px;
+  }
   .overview-grid { grid-template-columns: 1fr; }
+  .pagination-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .pagination-actions {
+    justify-content: space-between;
+  }
 }

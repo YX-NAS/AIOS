@@ -74,6 +74,7 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         status_code, pack_by_task_payload = request_json(handle.url, f"/api/packs/by-task/{task_id}")
         assert status_code == 200
         assert "AIOS Context Pack" in pack_by_task_payload["pack"]["content"]
+        assert "实现登录功能" in pack_by_task_payload["pack"]["display_name"]
 
         status_code, handoff_payload = request_json(
             handle.url,
@@ -86,6 +87,9 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert "Manual execution steps" in handoff_payload["handoff"]["content"]
 
         pack_name = pack_by_task_payload["pack"]["name"]
+        status_code, packs_payload = request_json(handle.url, "/api/packs")
+        assert status_code == 200
+        assert any("实现登录功能" in pack["display_name"] for pack in packs_payload["packs"])
         status_code, pack_content_payload = request_json(handle.url, f"/api/packs/content/{pack_name}")
         assert status_code == 200
         assert pack_content_payload["pack"]["name"] == pack_name
@@ -94,13 +98,33 @@ def test_web_ui_flow(tmp_path: Path) -> None:
             handle.url,
             "/api/complete",
             method="POST",
-            payload={"task_id": task_id, "summary": "完成登录功能并验证通过"},
+            payload={
+                "task_id": task_id,
+                "summary": "完成登录功能并验证通过",
+                "actual_model": "gpt-5.5",
+                "test_command": "pytest -q",
+                "test_result": "all passed",
+                "score": 5,
+                "score_note": "一次通过",
+            },
         )
         assert status_code == 200
         assert complete_payload["task"]["status"] == "done"
+        changelog = (tmp_path / ".aios" / "changelog.md").read_text(encoding="utf-8")
+        assert "实际执行模型：gpt-5.5" in changelog
+        assert "测试命令：pytest -q" in changelog
+        assert "测试结果：all passed" in changelog
 
         with urlopen(f"{handle.url}/") as response:
             html = response.read().decode("utf-8")
         assert "AIOS Web UI" in html
+        assert 'id="taskPagination"' in html
+        assert 'id="packPagination"' in html
+
+        with urlopen(f"{handle.url}/assets/app.js") as response:
+            js = response.read().decode("utf-8")
+        assert "const ITEMS_PER_PAGE = 10;" in js
+        assert "renderPagination(elements.taskPagination" in js
+        assert "renderPagination(elements.packPagination" in js
     finally:
         handle.close()

@@ -184,6 +184,19 @@ def complete_task(root: Path, task_id: str, summary: str) -> dict:
     raise ValueError(f"Task not found: {task_id}")
 
 
+def set_task_status(root: Path, task_id: str, status: str) -> dict:
+    if status not in {"todo", "running", "done"}:
+        raise ValueError(f"Unsupported task status: {status}")
+    tasks = load_tasks(root)
+    for task in tasks:
+        if task["id"] == task_id:
+            task["status"] = status
+            task["updated_at"] = now_iso()
+            save_tasks(root, tasks)
+            return task
+    raise ValueError(f"Task not found: {task_id}")
+
+
 def classify_task(title: str) -> str:
     lowered = title.lower()
     for task_type, keywords in TYPE_KEYWORDS:
@@ -411,7 +424,7 @@ def next_task_id(tasks: list[dict]) -> str:
 
 def write_tasks_markdown(path: Path, tasks: list[dict]) -> None:
     lines = ["# 任务列表", ""]
-    for status, title in [("todo", "待处理"), ("doing", "进行中"), ("done", "已完成")]:
+    for status, title in [("todo", "待处理"), ("running", "进行中"), ("done", "已完成")]:
         grouped = [task for task in tasks if task["status"] == status]
         lines.extend([f"## {title}", ""])
         if not grouped:

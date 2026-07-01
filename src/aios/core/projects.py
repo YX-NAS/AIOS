@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from aios.core.executions import execution_summary
 from aios.core.instance_manager import DEFAULT_HOST, instance_status, project_id_for_root, state_dir
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
@@ -87,6 +88,10 @@ def project_runtime_data(root: Path) -> dict:
             "latest_task_title": None,
             "latest_goal": None,
             "last_task_updated_at": None,
+            "execution_count": 0,
+            "active_execution_count": 0,
+            "latest_execution_status": None,
+            "last_execution_updated_at": None,
         }
     tasks_payload = read_json(aios_dir / "tasks.json", {"tasks": []})
     tasks = tasks_payload["tasks"]
@@ -110,6 +115,7 @@ def project_runtime_data(root: Path) -> dict:
         "latest_task_title": latest_task.get("title") if latest_task else None,
         "latest_goal": latest_goal,
         "last_task_updated_at": latest_task.get("updated_at") if latest_task else None,
+        **execution_summary(root),
     }
 
 

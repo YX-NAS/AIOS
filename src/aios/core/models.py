@@ -154,6 +154,7 @@ def update_model(
             model["enabled"] = enabled
             model["rank"] = max(1, rank)
             model["task_types"] = _clean_task_types(task_types)
+            model["context_window"] = model.get("context_window") or DEFAULT_CONTEXT_WINDOWS.get(target_id)
             save_model_library(root, models)
             return next(item for item in load_model_library(root) if item["id"] == target_id)
     raise ValueError(f"Model not found: {current_model_id}")

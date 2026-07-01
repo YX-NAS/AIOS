@@ -32,9 +32,12 @@
 
       <main class="main-panel">
         <header class="topbar">
-          <div>
+          <div class="topbar-copy">
             <div class="eyebrow">AI Development Operating System</div>
-            <h1>项目控制台</h1>
+            <div class="headline-row">
+              <h1>项目控制台</h1>
+              <div id="projectBadge" class="project-badge hidden">-</div>
+            </div>
             <p id="statusText">正在加载项目状态...</p>
           </div>
           <div class="topbar-actions">
@@ -144,6 +147,7 @@
                   <tbody id="taskTableBody"></tbody>
                 </table>
               </div>
+              <div id="taskPagination" class="pagination-bar"></div>
             </article>
 
             <article id="packs" class="panel">
@@ -154,6 +158,7 @@
                 </div>
               </div>
               <div id="packList" class="pack-list"></div>
+              <div id="packPagination" class="pagination-bar"></div>
             </article>
           </section>
 
@@ -183,6 +188,10 @@
                   <div class="small-label">模型路由</div>
                   <div id="routeCard" class="route-card">选择任务后自动加载路由建议。</div>
                 </div>
+                <div class="inspector-block">
+                  <div class="small-label">执行状态</div>
+                  <div id="executionCard" class="route-card">还没有执行记录。</div>
+                </div>
                 <form id="packForm" class="stack-form slim">
                   <label>
                     <span>生成 Pack 模型</span>
@@ -190,12 +199,40 @@
                   </label>
                   <button type="submit" class="button secondary wide">生成 Context Pack</button>
                 </form>
+                <button id="startExecutionButton" type="button" class="button primary wide">开始执行</button>
                 <button id="copyHandoffButton" type="button" class="button secondary wide">生成并复制任务交接单</button>
                 <button id="copyCurrentPackButton" type="button" class="button subtle wide hidden">复制当前任务最新 Context Pack</button>
                 <form id="completeForm" class="stack-form slim">
                   <label>
+                    <span>实际模型</span>
+                    <input name="actual_model" placeholder="例如：gpt-5.5" />
+                  </label>
+                  <label>
+                    <span>测试命令</span>
+                    <input name="test_command" placeholder="例如：pytest -q" />
+                  </label>
+                  <label>
+                    <span>测试结果</span>
+                    <textarea name="test_result" rows="3" placeholder="例如：59 passed in 16.18s"></textarea>
+                  </label>
+                  <label>
                     <span>完成总结</span>
                     <textarea name="summary" rows="4" placeholder="例如：修复登录报错，补充回归测试并验证通过"></textarea>
+                  </label>
+                  <label>
+                    <span>模型评分（可选）</span>
+                    <select name="score">
+                      <option value="">不评分</option>
+                      <option value="5">5</option>
+                      <option value="4">4</option>
+                      <option value="3">3</option>
+                      <option value="2">2</option>
+                      <option value="1">1</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>评分备注（可选）</span>
+                    <input name="score_note" placeholder="例如：一次通过" />
                   </label>
                   <button type="submit" class="button primary wide">标记完成</button>
                 </form>

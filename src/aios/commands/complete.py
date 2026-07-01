@@ -3,8 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from aios.core.scoring import save_score
-from aios.core.workflow import finalize_task
+from aios.core.executions import finish_manual_execution
 
 
 def add_complete_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -16,10 +15,9 @@ def add_complete_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run_complete(root: Path, args: argparse.Namespace) -> None:
-    task = finalize_task(root, args.task_id, args.summary)
+    result = finish_manual_execution(root, args.task_id, args.summary, score=args.score, score_note=args.score_note)
+    task = result["task"]
     if args.score is not None:
-        model = task.get("recommended_model", "unknown")
-        save_score(root, args.task_id, model, args.score, args.score_note, task.get("type"))
         print(f"Completed {task['id']}: {task['title']} (model score: {args.score}/5)")
     else:
         print(f"Completed {task['id']}: {task['title']}")

@@ -91,12 +91,17 @@ function renderProjects() {
               <div class="metric-value">${project.enabled_model_count}</div>
               <div class="metric-label">启用模型</div>
             </div>
+            <div class="metric-tile">
+              <div class="metric-value">${project.active_execution_count}</div>
+              <div class="metric-label">活跃执行</div>
+            </div>
           </div>
           <div class="project-context">
             <div><strong>最近目标：</strong>${project.latest_goal || "暂无"}</div>
             <div><strong>最近任务：</strong>${project.latest_task_title || "暂无"}</div>
             <div><strong>技术栈：</strong>${formatList(project.languages)} / ${formatList(project.frameworks)}</div>
             <div class="small-note">最近端口：${project.port || project.last_port || "-"} | 最近任务更新时间：${project.last_task_updated_at || "-"}</div>
+            <div class="small-note">最近执行状态：${project.latest_execution_status || "-"} | 最近执行更新时间：${project.last_execution_updated_at || "-"}</div>
           </div>
             <div class="project-actions">
               <button type="button" class="button primary open-project-button" data-project-id="${project.project_id}">打开项目</button>
