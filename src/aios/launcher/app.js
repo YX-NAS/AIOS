@@ -19,10 +19,11 @@ const elements = {
 };
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
+  const fetchOptions = { ...options };
+  if (fetchOptions.method === "POST" || fetchOptions.body) {
+    fetchOptions.headers = { "Content-Type": "application/json", ...(fetchOptions.headers || {}) };
+  }
+  const response = await fetch(path, fetchOptions);
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.error || "Request failed");
@@ -105,7 +106,8 @@ function renderProjects() {
             </div>
           </div>
         </div>
-      `,
+      `;
+      },
     )
     .join("");
 
