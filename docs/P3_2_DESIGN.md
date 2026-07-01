@@ -38,14 +38,21 @@
 
 每次导出生成一个 JSON 文件，命名建议：
 
-- `TASK-ID-模型名-ccswitch.json`
+- `TASK-ID-EXECUTION-ID-模型名-ccswitch.json`
+
+命名决策：
+
+- 采用审计保留模式，不覆盖历史导出文件
+- 同一任务、同一模型、多次导出时，靠 `execution_id` 区分
+- 导出文件和执行记录可以一一追溯
 
 最小字段：
 
 - `task_id`
 - `task_title`
 - `execution_id`
-- `recommended_model`
+- `planned_model`
+- `export_model`
 - `fallback_models`
 - `context_pack_path`
 - `handoff_path`
@@ -58,6 +65,7 @@
 - 保持字段稳定、可被脚本消费
 - 只输出 AIOS 已确认的事实，不伪造 `ccswitch` 私有字段
 - 如果后续确认 `ccswitch` 有稳定脚本接口，再做第二层转换
+- 导出 payload 中的 `export_model` 允许与执行记录中的 `planned_model` 不同，但必须显式区分，不能混写
 
 ### 2. 新增适配服务层
 
@@ -90,9 +98,15 @@ aios ccswitch export TASK-ID
 行为：
 
 - 默认读取最近执行记录里的 `planned_model`
-- 如果带 `--model`，允许覆盖导出目标模型
+- 如果带 `--model`，允许覆盖本次导出的目标模型
 - 默认写文件
 - 如果带 `--stdout`，同时把 JSON 输出到终端，方便脚本接管
+
+覆盖规则：
+
+- `--model` 只影响本次导出 payload 里的 `export_model`
+- `--model` 不修改执行记录中的 `planned_model`
+- 执行记录单独记录本次导出的模型，避免把“计划模型”和“导出模型”混在一起
 
 ### 4. Web UI 入口
 
@@ -103,18 +117,51 @@ aios ccswitch export TASK-ID
 
 位置放在“开始执行”和“复制交接单”附近，但不替代主执行入口。
 
+### 4.1 Web API
+
+新增接口：
+
+- `POST /api/ccswitch/export`
+
+请求字段：
+
+- `task_id`：必填
+- `model`：可选。覆盖本次导出的目标模型
+- `stdout`：可选。默认 `false`
+
+返回字段：
+
+- `message`
+- `export_path`
+- `payload`
+- `execution`
+
+错误语义：
+
+- 没有执行记录：返回 400，并提示先执行 `run --manual`
+- 任务不存在：返回 400
+- 项目未初始化：返回 404
+
+接口决策：
+
+- CLI 和 Web UI 共用同一套导出服务层
+- Web 不单独发明另一套导出结构
+- `stdout=true` 时仍返回标准 JSON，只是不额外要求文件下载交互
+
 ### 5. 执行记录联动
 
 执行记录增加两个可选字段：
 
 - `ccswitch_export_path`
 - `ccswitch_exported_at`
+- `ccswitch_export_model`
 
 导出后回写到最近执行记录，便于用户知道：
 
 - 这个任务是否已经导出过
 - 导出的文件在哪
 - 是什么时候导出的
+- 当次导出使用的是哪个模型
 
 ### 6. 风险控制
 
@@ -188,6 +235,7 @@ aios ccswitch export TASK-ID
 3. Web API
 - 导出接口返回文件路径和 JSON 内容
 - 导出后执行记录被更新
+- `model` 覆盖后，返回的 `payload.export_model` 正确，但执行记录的 `planned_model` 不被篡改
 
 4. Web UI
 - 导出按钮不影响原有执行流程
@@ -196,6 +244,7 @@ aios ccswitch export TASK-ID
 5. 兼容性
 - 没有 `ccswitch` 目录时自动创建
 - 旧项目升级后无需手工迁移
+- 同一任务多次导出不会覆盖历史文件
 
 ### 手工验收
 
@@ -207,6 +256,7 @@ aios ccswitch export TASK-ID
    - fallback 正确
    - Context Pack 路径正确
    - handoff 路径正确
+   - 导出模型和计划模型的关系清楚可见
 5. 回到 AIOS，确认执行记录出现导出信息
 
 ## 验收标准
@@ -217,3 +267,4 @@ aios ccswitch export TASK-ID
 2. 用户不需要再手工整理模型切换信息
 3. 导出内容可追溯到当前任务和执行记录
 4. 不破坏现有 `run --manual` / `run finish` 流程
+5. 多次导出不会覆盖历史，且能区分 `planned_model` 与 `export_model`

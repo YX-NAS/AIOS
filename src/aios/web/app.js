@@ -42,6 +42,8 @@ const elements = {
   packPagination: document.getElementById("packPagination"),
   scanButton: document.getElementById("scanButton"),
   startExecutionButton: document.getElementById("startExecutionButton"),
+  exportCcswitchButton: document.getElementById("exportCcswitchButton"),
+  copyCcswitchButton: document.getElementById("copyCcswitchButton"),
   copyCurrentPackButton: document.getElementById("copyCurrentPackButton"),
   copyHandoffButton: document.getElementById("copyHandoffButton"),
   initForm: document.getElementById("initForm"),
@@ -336,8 +338,10 @@ function renderExecution(task, execution) {
     <strong>${execution.execution_id} | ${execution.status}</strong>
     <div class="muted">计划模型：${execution.planned_model || task.recommended_model}</div>
     <div class="muted">实际模型：${execution.actual_model || "-"}</div>
+    <div class="muted">最近导出模型：${execution.ccswitch_export_model || "-"}</div>
     <div class="muted">Pack：${execution.pack_path || "-"}</div>
     <div class="muted">Handoff：${execution.handoff_path || "-"}</div>
+    <div class="muted">ccswitch 导出：${execution.ccswitch_export_path || "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
@@ -534,6 +538,37 @@ elements.startExecutionButton.addEventListener("click", async () => {
     await copyText(data.handoff.content);
     setActivity(`已开始执行 ${data.task.id}。\n模型：${data.execution.planned_model}\n交接单已复制：${data.handoff.handoff_path}`);
   }, "开始执行失败。");
+});
+
+elements.exportCcswitchButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/ccswitch/export", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId }),
+    });
+    await refreshDashboard();
+    setActivity(`已导出 ccswitch 适配文件：${data.export_path}\n导出模型：${data.payload.export_model}`);
+  }, "导出 ccswitch 适配文件失败。");
+});
+
+elements.copyCcswitchButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/ccswitch/export", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId }),
+    });
+    await copyText(JSON.stringify(data.payload, null, 2));
+    await refreshDashboard();
+    setActivity(`已复制 ccswitch JSON：${data.payload.export_model}`);
+  }, "复制 ccswitch JSON 失败。");
 });
 
 elements.completeForm.addEventListener("submit", async (event) => {

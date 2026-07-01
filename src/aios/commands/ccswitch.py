@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from aios.core.ccswitch import export_ccswitch_payload, export_payload_as_text
+
+
+def add_ccswitch_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("ccswitch", help="Export ccswitch adapter payloads.")
+    ccswitch_subparsers = parser.add_subparsers(dest="ccswitch_command", required=True)
+
+    export = ccswitch_subparsers.add_parser("export", help="Export one task as ccswitch JSON.")
+    export.add_argument("task_id")
+    export.add_argument("--model", default=None, help="Optional export model override.")
+    export.add_argument("--stdout", action="store_true", help="Also print the JSON payload to stdout.")
+
+
+def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
+    if args.ccswitch_command != "export":
+        raise ValueError("Unsupported ccswitch command.")
+
+    result = export_ccswitch_payload(root, args.task_id, model=args.model)
+    print(f"Exported {result['export_path']}")
+    print(f"Task: {result['task']['id']} {result['task']['title']}")
+    print(f"Planned model: {result['payload']['planned_model']}")
+    print(f"Export model: {result['payload']['export_model']}")
+    if args.stdout:
+        print(export_payload_as_text(result["payload"]).rstrip())

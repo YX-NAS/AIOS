@@ -9,6 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+from aios.core.ccswitch import export_ccswitch_payload
 from aios.core.context_builder import build_context_pack
 from aios.core.executions import execution_summary, finish_manual_execution, latest_execution_for_task, prepare_manual_execution
 from aios.core.scoring import load_scores, model_score_summary
@@ -78,6 +79,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json({"packs": list_packs(self.project_root)})
                 if parsed.path == "/api/handoffs":
                     return self._send_json({"handoffs": list_handoffs(self.project_root)})
+                if parsed.path == "/api/ccswitch/export":
+                    self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+                    return
                 if parsed.path.startswith("/api/packs/by-task/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     pack = get_pack_for_task(self.project_root, task_id)
@@ -176,6 +180,21 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         {
                             "message": "Task handoff created.",
                             "handoff": handoff,
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/ccswitch/export":
+                    result = export_ccswitch_payload(
+                        self.project_root,
+                        payload["task_id"],
+                        model=(payload.get("model") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "ccswitch payload exported.",
+                            "export_path": result["export_path"],
+                            "payload": result["payload"],
+                            "execution": result["execution"],
                         },
                         status=HTTPStatus.CREATED,
                     )

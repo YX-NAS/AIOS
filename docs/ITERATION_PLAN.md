@@ -4,14 +4,14 @@
 
 ## 当前状态
 
-MVP 已交付，核心功能完整：
+当前版本已交付到 `P3-2`，核心功能包括：
 
-- CLI：init / scan / task / route / pack / run / handoff / complete / status / web / launcher
-- 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、完成回写
+- CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
+- 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
 - 多项目 Launcher：项目登记、全局模型库（表格 + 勾选框）、一键启停、执行摘要
 - 暗黑科技风 UI 主题
 
-已知短板：仍需人工切换 `ccswitch`、尚未自动调用 Codex / Claude Code、自动化调度尚未落地。
+已知短板：仍需人工切换 `ccswitch`、尚未自动调用 Codex / Claude Code、自动化调度尚未落地、操作手册尚未同步到 `P3-2`。
 
 ---
 
@@ -53,7 +53,7 @@ MVP 已交付，核心功能完整：
 |------|------|---------|
 | P3-0 | 半自动执行稳定层 | `.aios/executions.json` 可追踪 prepared / running / finished；单项目 Web UI 和 launcher 可查看执行摘要 |
 | P3-1 | 统一手动执行入口 | `aios run --manual` / `run finish` 跑通一条完整半自动执行链路 |
-| P3-2 | CC Switch 集成 | 输出 `ccswitch` 兼容信息或适配器输入，为后续自动切换做准备 |
+| P3-2 | CC Switch 集成 | 输出 `ccswitch` 兼容 JSON，可追溯到任务和执行记录 |
 | P3-3 | `aios run` 自动执行 | 选模型 → 生成 Pack → 调用模型 API → 回写，全链路闭环 |
 | P3-4 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
 | P3-5 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
@@ -71,21 +71,21 @@ MVP 已交付，核心功能完整：
 
 ## 近期重点（接下来 2 周）
 
-1. P3-0：执行记录和执行状态稳定化
-2. P3-1：统一手动执行入口与 Web UI 主路径切换
-3. P3-2：`ccswitch` 输出适配层评估与落地
-4. P3-3：自动执行可行性原型
-5. P0-2：继续补操作手册和验收说明
+1. P3-3：自动执行可行性原型
+2. P3-4：自动 Git 提交
+3. P3-5：成本统计
+4. P0-2：补齐操作手册到 `P3-2`
+5. P1：继续收口易用性细节
 
 ## 下一阶段实施目标
 
-下一阶段默认进入 `P3-2 ccswitch` 适配层，目标是：
+下一阶段默认进入 `P3-3` 自动执行可行性原型，目标是：
 
-- 把当前任务执行信息导出成稳定 JSON
-- 让用户不再手工抄模型名、fallback、Pack 路径和交接单路径
-- 先做标准化适配输出，不直接假设 `ccswitch` 有稳定 CLI
+- 评估在不破坏现有半自动流程的前提下，如何把模型执行入口进一步收口
+- 先做受控原型，不直接默认接入真实自动编码
+- 保留人工确认，避免把错误自动化
 
-详细开发方案和测试计划见 [docs/P3_2_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_2_DESIGN.md)。
+已完成的 `P3-2` 方案见 [docs/P3_2_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_2_DESIGN.md)。
 
 ---
 
@@ -98,3 +98,4 @@ MVP 已交付，核心功能完整：
 | 2026-07-01 | 添加项目与项目列表上下排列 | 表单宽度不够且双列布局不对称，单列更整洁 |
 | 2026-07-01 | 框体平铺去掉 max-width | 大屏幕上留白过多，信息密度优先 |
 | 2026-07-01 | `run` 成为半自动执行主入口 | `handoff` 只适合生成交接文档，不适合承载执行状态机 |
+| 2026-07-01 | `ccswitch` 先做适配输出，不直接做自动控制 | 先标准化导出，再评估稳定 CLI 或自动切换能力 |

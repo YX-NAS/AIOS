@@ -142,3 +142,81 @@ def test_loading_executions_without_file_returns_empty_after_init(tmp_path: Path
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "executions.json").unlink()
     assert load_executions(tmp_path) == []
+
+
+def test_ccswitch_export_cli_writes_auditable_json(tmp_path: Path) -> None:
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "export", task["id"], "--model", "claude"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["ccswitch_export_model"] == "claude"
+    export_path = tmp_path / execution["ccswitch_export_path"]
+    assert export_path.exists()
+    payload = json.loads(export_path.read_text(encoding="utf-8"))
+    assert payload["task_id"] == task["id"]
+    assert payload["execution_id"] == execution["execution_id"]
+    assert payload["planned_model"] == task["recommended_model"]
+    assert payload["export_model"] == "claude"
+
+
+def test_ccswitch_export_cli_stdout_outputs_json(tmp_path: Path, capsys) -> None:
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "export", task["id"], "--stdout"]) == 0
+    output = capsys.readouterr().out
+    assert '"task_id"' in output
+    assert '"export_model"' in output
+
+
+def test_ccswitch_export_api_updates_execution_without_overwriting_planned_model(tmp_path: Path) -> None:
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(handle.url, "/api/run/manual", method="POST", payload={"task_id": task["id"], "start": True})
+
+        status_code, export_payload = request_json(
+            handle.url,
+            "/api/ccswitch/export",
+            method="POST",
+            payload={"task_id": task["id"], "model": "claude"},
+        )
+        assert status_code == 201
+        assert export_payload["payload"]["export_model"] == "claude"
+        assert export_payload["payload"]["planned_model"] == task["recommended_model"]
+        assert export_payload["execution"]["planned_model"] == task["recommended_model"]
+        assert export_payload["execution"]["ccswitch_export_model"] == "claude"
+        assert (tmp_path / export_payload["export_path"]).exists()
+    finally:
+        handle.close()
+
+
+def test_ccswitch_export_requires_execution_record(tmp_path: Path) -> None:
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task_id = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"]
+
+        request = Request(
+            f"{handle.url}/api/ccswitch/export",
+            data=json.dumps({"task_id": task_id}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            urlopen(request)
+            raise AssertionError("Expected export without execution to fail")
+        except Exception as exc:  # noqa: BLE001
+            assert "run --manual" in str(exc) or "HTTP Error 400" in str(exc)
+    finally:
+        handle.close()
