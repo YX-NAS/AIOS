@@ -14,6 +14,7 @@ def test_init_creates_aios_files(tmp_path: Path) -> None:
     assert (aios_dir / "project.yaml").exists()
     assert (aios_dir / "context.md").exists()
     assert (aios_dir / "tasks.json").exists()
+    assert (aios_dir / "task-plans.json").exists()
     assert (aios_dir / "executions.json").exists()
     assert (aios_dir / "model-routing.json").exists()
     assert (aios_dir / "context-packs").is_dir()
@@ -80,6 +81,8 @@ def test_task_plan_splits_time_state_bug_into_detailed_tasks(tmp_path: Path) -> 
     assert tasks[3]["type"] == "testing"
     assert tasks[4]["type"] == "documentation"
     assert "状态根据当前真实时间更新" in tasks[2]["acceptance_criteria"]
+    assert tasks[1]["parent_task_id"] == tasks[0]["id"]
+    assert tasks[2]["depends_on_task_ids"] == [tasks[1]["id"]]
 
 
 def test_task_plan_splits_system_goal_into_module_tasks(tmp_path: Path) -> None:
@@ -99,6 +102,10 @@ def test_task_plan_splits_system_goal_into_module_tasks(tmp_path: Path) -> None:
     assert "实现后台管理：会员积分系统" in titles
     admin_task = next(task for task in tasks if task["title"] == "实现后台管理：会员积分系统")
     assert admin_task["type"] == "ui_design"
+    design_task = next(task for task in tasks if task["title"] == "设计核心数据与接口：会员积分系统")
+    testing_task = next(task for task in tasks if task["title"] == "补充测试与验收：会员积分系统")
+    assert admin_task["depends_on_task_ids"] == [design_task["id"]]
+    assert len(testing_task["depends_on_task_ids"]) == 4
 
 
 def test_task_plan_splits_short_system_goal_into_system_stages(tmp_path: Path) -> None:
@@ -115,6 +122,23 @@ def test_task_plan_splits_short_system_goal_into_system_stages(tmp_path: Path) -
     assert titles[2] == "实现核心能力：会员积分系统"
     assert titles[3] == "补充测试与验收：会员积分系统"
     assert titles[4] == "更新文档与交付记录：会员积分系统"
+
+
+def test_task_plan_draft_cli_roundtrip(tmp_path: Path, capsys) -> None:
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    goal = "开发会员积分系统，包含积分获取、积分扣减、明细查询和后台管理"
+
+    assert main(["--root", str(tmp_path), "task", "plan", goal, "--priority", "high", "--draft"]) == 0
+    drafts = json.loads((tmp_path / ".aios" / "task-plans.json").read_text(encoding="utf-8"))["drafts"]
+    assert len(drafts) == 1
+    draft_id = drafts[0]["draft_id"]
+    assert drafts[0]["status"] == "draft"
+    assert main(["--root", str(tmp_path), "task", "draft", "confirm", draft_id]) == 0
+    tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"]
+    assert len(tasks) == 8
+    updated_drafts = json.loads((tmp_path / ".aios" / "task-plans.json").read_text(encoding="utf-8"))["drafts"]
+    assert updated_drafts[0]["status"] == "confirmed"
+    assert any(task.get("plan_draft_id") == draft_id for task in tasks)
 
 
 def test_task_create_uses_global_model_library_recommendation(tmp_path: Path, monkeypatch) -> None:

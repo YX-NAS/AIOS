@@ -21,7 +21,17 @@ from aios.core.paths import aios_path
 from aios.core.project import initialize_project
 from aios.core.router import log_routing, route_task
 from aios.core.scanner import scan_project
-from aios.core.tasks import create_task, get_task, load_tasks, plan_goal
+from aios.core.tasks import (
+    confirm_plan_draft,
+    create_plan_draft,
+    create_task,
+    delete_plan_draft,
+    get_plan_draft,
+    get_task,
+    list_plan_drafts,
+    load_tasks,
+    plan_goal,
+)
 from aios.utils.json_utils import read_json
 
 
@@ -55,6 +65,11 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(self._status_payload())
                 if parsed.path == "/api/tasks":
                     return self._send_json({"tasks": load_tasks_safe(self.project_root)})
+                if parsed.path == "/api/task-plans":
+                    return self._send_json({"drafts": list_plan_drafts(self.project_root)})
+                if parsed.path.startswith("/api/task-plans/"):
+                    draft_id = parsed.path.rsplit("/", 1)[-1]
+                    return self._send_json({"draft": get_plan_draft(self.project_root, draft_id)})
                 if parsed.path.startswith("/api/tasks/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     return self._send_json(
@@ -145,16 +160,33 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     goal = (payload.get("goal") or "").strip()
                     if not goal:
                         raise ValueError("Goal is required.")
-                    planned = plan_goal(
+                    if payload.get("confirm"):
+                        draft_id = (payload.get("draft_id") or "").strip()
+                        planned = confirm_plan_draft(self.project_root, draft_id) if draft_id else plan_goal(
+                            self.project_root,
+                            goal,
+                            payload.get("priority", "high"),
+                            create=True,
+                        )
+                        return self._send_json(
+                            {
+                                "message": "Goal split completed.",
+                                "draft_id": draft_id or None,
+                                "tasks": planned,
+                            },
+                            status=HTTPStatus.CREATED,
+                        )
+                    draft = create_plan_draft(
                         self.project_root,
                         goal,
                         payload.get("priority", "high"),
-                        create=bool(payload.get("confirm")),
                     )
                     return self._send_json(
                         {
-                            "message": "Goal split completed.",
-                            "tasks": planned,
+                            "message": "Goal split draft created.",
+                            "draft_id": draft["draft_id"],
+                            "draft": draft,
+                            "tasks": draft["tasks"],
                         },
                         status=HTTPStatus.CREATED,
                     )
@@ -281,6 +313,19 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
 
         def log_message(self, format: str, *args: object) -> None:
             return
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            try:
+                parsed = urlparse(self.path)
+                if parsed.path.startswith("/api/task-plans/"):
+                    draft_id = parsed.path.rsplit("/", 1)[-1]
+                    delete_plan_draft(self.project_root, draft_id)
+                    return self._send_json({"message": "Draft deleted."})
+                self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+            except FileNotFoundError as exc:
+                self._send_error(HTTPStatus.NOT_FOUND, str(exc))
+            except ValueError as exc:
+                self._send_error(HTTPStatus.BAD_REQUEST, str(exc))
 
         def _status_payload(self) -> dict:
             aios_dir = aios_path(self.project_root)

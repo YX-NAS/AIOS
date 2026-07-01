@@ -298,3 +298,40 @@ def test_executor_library_cli_lists_defaults(tmp_path: Path, monkeypatch, capsys
     assert "manual [manual]" in output
     assert "codex-cli [command]" in output
     assert load_executor_library()
+
+
+def test_plan_draft_api_create_confirm_and_delete(tmp_path: Path) -> None:
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        goal = "开发会员积分系统，包含积分获取、积分扣减、明细查询和后台管理"
+        status_code, preview_payload = request_json(
+            handle.url,
+            "/api/tasks/plan",
+            method="POST",
+            payload={"goal": goal, "priority": "high"},
+        )
+        assert status_code == 201
+        draft_id = preview_payload["draft_id"]
+        assert draft_id.startswith("DRAFT-")
+        assert preview_payload["tasks"][2]["depends_on_task_ids"] == ["design"]
+
+        status_code, draft_payload = request_json(handle.url, f"/api/task-plans/{draft_id}")
+        assert status_code == 200
+        assert draft_payload["draft"]["draft_id"] == draft_id
+
+        status_code, confirm_payload = request_json(
+            handle.url,
+            "/api/tasks/plan",
+            method="POST",
+            payload={"goal": goal, "priority": "high", "confirm": True, "draft_id": draft_id},
+        )
+        assert status_code == 201
+        assert confirm_payload["tasks"][0]["id"].startswith("TASK-")
+        assert confirm_payload["tasks"][2]["depends_on_task_ids"]
+
+        request = Request(f"{handle.url}/api/task-plans/{draft_id}", method="DELETE")
+        with urlopen(request) as response:
+            assert response.status == 200
+    finally:
+        handle.close()

@@ -314,6 +314,9 @@ async function loadTaskInspector() {
   elements.taskInspector.classList.remove("hidden");
   elements.taskTitle.textContent = task.title;
   elements.taskMeta.textContent = `${task.id} | ${task.status} | ${task.priority} | ${task.recommended_model}`;
+  const dependencyText = (task.depends_on_task_ids || []).length ? ` | 依赖 ${task.depends_on_task_ids.join(", ")}` : "";
+  const parentText = task.parent_task_id ? ` | 父任务 ${task.parent_task_id}` : "";
+  elements.taskMeta.textContent += `${parentText}${dependencyText}`;
   elements.acceptanceList.innerHTML = task.acceptance_criteria.map((item) => `<li>${item}</li>`).join("");
   elements.routeCard.innerHTML = `
     <strong>${route.recommended_model}</strong>
@@ -358,7 +361,11 @@ function renderPlanPreview() {
   container.classList.remove("hidden");
   const list = container.querySelector(".plan-preview-list");
   list.innerHTML = preview.tasks
-    .map((task, i) => `<div class="plan-preview-item"><span class="plan-preview-type">${task.type}</span> <strong>${task.title}</strong> <span class="muted">${task.recommended_model}</span></div>`)
+    .map((task) => {
+      const depends = (task.depends_on_task_ids || []).length ? ` | 依赖 ${task.depends_on_task_ids.join(", ")}` : "";
+      const parent = task.parent_task_id ? ` | 父任务 ${task.parent_task_id}` : "";
+      return `<div class="plan-preview-item"><span class="plan-preview-type">${task.type}</span> <strong>${task.title}</strong> <span class="muted">${task.recommended_model}${parent}${depends}</span></div>`;
+    })
     .join("");
 }
 
@@ -368,7 +375,7 @@ document.getElementById("planConfirmButton")?.addEventListener("click", async ()
   await runAction(async () => {
     const data = await api("/api/tasks/plan", {
       method: "POST",
-      body: JSON.stringify({ goal: preview.goal, priority: preview.priority, confirm: true }),
+      body: JSON.stringify({ goal: preview.goal, priority: preview.priority, confirm: true, draft_id: preview.draftId }),
     });
     state.planPreview = null;
     renderPlanPreview();
@@ -380,9 +387,14 @@ document.getElementById("planConfirmButton")?.addEventListener("click", async ()
 });
 
 document.getElementById("planCancelButton")?.addEventListener("click", () => {
-  state.planPreview = null;
-  renderPlanPreview();
-  setActivity("已取消目标拆分。");
+  runAction(async () => {
+    if (state.planPreview?.draftId) {
+      await api(`/api/task-plans/${encodeURIComponent(state.planPreview.draftId)}`, { method: "DELETE" });
+    }
+    state.planPreview = null;
+    renderPlanPreview();
+    setActivity("已取消目标拆分。");
+  }, "取消拆分草案失败。");
 });
 
 async function refreshDashboard() {
@@ -463,9 +475,9 @@ elements.goalPlanForm.addEventListener("submit", async (event) => {
     };
     // Preview first, don't create yet
     const data = await api("/api/tasks/plan", { method: "POST", body: JSON.stringify(payload) });
-    state.planPreview = { goal: payload.goal, priority: payload.priority, tasks: data.tasks };
+    state.planPreview = { goal: payload.goal, priority: payload.priority, tasks: data.tasks, draftId: data.draft_id };
     renderPlanPreview();
-    setActivity(`预览 ${data.tasks.length} 条拆分任务，确认后才会创建。`);
+    setActivity(`已生成拆分草案 ${data.draft_id}，预览 ${data.tasks.length} 条任务，确认后才会创建。`);
   }, "目标拆分失败。");
 });
 
