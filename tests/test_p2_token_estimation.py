@@ -40,6 +40,10 @@ def test_pack_returns_token_estimate(tmp_path: Path) -> None:
     assert result["context_window"] == 128000
     assert 0 < result["window_usage_pct"] < 100
     assert result["path"].exists()
+    content = result["path"].read_text(encoding="utf-8")
+    assert "## 任务层" in content
+    assert "## 项目层" in content
+    assert "## 文件层" in content
 
 
 def test_pack_warns_on_large_context(tmp_path: Path) -> None:
@@ -51,13 +55,15 @@ def test_pack_warns_on_large_context(tmp_path: Path) -> None:
     task = get_task(tmp_path, tasks[0]["id"])
     result = build_context_pack(tmp_path, task, "minimax-m2.7-highspeed")
     assert result["context_window"] == 32000
-    # Small packs won't exceed 90%, so warning should be None
-    assert result["warning"] is None
+    assert result["quality"] == "ok"
+    assert any("placeholder" in warning.lower() for warning in result["warnings"])
 
 
 def test_pack_no_warning_within_window(tmp_path: Path) -> None:
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     main(["--root", str(tmp_path), "task", "create", "test task"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构说明。\n", encoding="utf-8")
     import json
     tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text())["tasks"]
     from aios.core.tasks import get_task
@@ -66,6 +72,7 @@ def test_pack_no_warning_within_window(tmp_path: Path) -> None:
     assert result["context_window"] == 200000
     assert result["warning"] is None
     assert result["window_usage_pct"] < 10
+    assert result["quality"] == "ok"
 
 
 def test_models_include_context_window(tmp_path: Path) -> None:

@@ -202,6 +202,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "context_window": result["context_window"],
                             "window_usage_pct": result["window_usage_pct"],
                             "warning": result["warning"],
+                            "warnings": result["warnings"],
+                            "quality": result["quality"],
+                            "relevant_file_count": len(result["relevant_files"]),
                         },
                         status=HTTPStatus.CREATED,
                     )

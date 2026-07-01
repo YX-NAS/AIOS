@@ -78,10 +78,21 @@ def test_context_pack_prefers_changed_files(tmp_path: Path) -> None:
         {"path": "src/b.py", "type": "source", "language": "python", "importance": "medium", "summary": "s", "size_bytes": 100, "git_status": "modified"},
         {"path": "src/c.py", "type": "source", "language": "python", "importance": "high", "summary": "s", "size_bytes": 100, "git_status": None},
     ]
-    result = choose_relevant_files(files, "simple_coding")
+    result = choose_relevant_files(files, "simple_coding", "更新 src b 模块")
     # b.py (modified) should come before a.py (same importance, no git change)
     paths = [f["path"] for f in result]
     assert paths.index("src/b.py") < paths.index("src/a.py")
+
+
+def test_context_pack_prefers_keyword_matches(tmp_path: Path) -> None:
+    from aios.core.context_builder import choose_relevant_files
+
+    files = [
+        {"path": "src/login_service.py", "type": "backend", "language": "python", "importance": "medium", "summary": "登录服务", "size_bytes": 100, "git_status": None},
+        {"path": "src/profile_service.py", "type": "backend", "language": "python", "importance": "high", "summary": "资料服务", "size_bytes": 100, "git_status": None},
+    ]
+    result = choose_relevant_files(files, "bug_fix", "修复登录报错")
+    assert result[0]["path"] == "src/login_service.py"
 
 
 def test_is_git_repo(tmp_path: Path) -> None:

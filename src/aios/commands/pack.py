@@ -20,5 +20,8 @@ def run_pack(root: Path, args: argparse.Namespace) -> None:
     pack_path = result["path"]
     print(f"Created {pack_path.relative_to(root)}")
     print(f"Token estimate: {result['token_estimate']} ({result['window_usage_pct']}% of {result['context_window']})")
+    print(f"Quality: {result['quality']}")
+    if result.get("relevant_files"):
+        print(f"Relevant files: {len(result['relevant_files'])}")
     if result["warning"]:
         print(f"WARNING: {result['warning']}", file=__import__('sys').stderr)
