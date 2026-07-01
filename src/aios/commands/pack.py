@@ -16,6 +16,9 @@ def add_pack_parser(subparsers: argparse._SubParsersAction) -> None:
 def run_pack(root: Path, args: argparse.Namespace) -> None:
     task = get_task(root, args.task_id)
     model = args.model or task["recommended_model"]
-    target = build_context_pack(root, task, model)
-    print(f"Created {target.relative_to(root)}")
-
+    result = build_context_pack(root, task, model)
+    pack_path = result["path"]
+    print(f"Created {pack_path.relative_to(root)}")
+    print(f"Token estimate: {result['token_estimate']} ({result['window_usage_pct']}% of {result['context_window']})")
+    if result["warning"]:
+        print(f"WARNING: {result['warning']}", file=__import__('sys').stderr)

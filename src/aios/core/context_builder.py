@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aios.core.paths import require_aios
+import math
 from aios.core.router import route_task
 from aios.utils.json_utils import read_json
 from aios.utils.text import now_iso
@@ -16,7 +17,23 @@ MODEL_STYLE = {
 }
 
 
-def build_context_pack(root: Path, task: dict, model: str) -> Path:
+def estimate_tokens(text: str) -> int:
+    """Estimate token count. Chinese ~1.5 tok/char, English/code ~0.25 tok/char."""
+    chinese_chars = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    other_chars = len(text) - chinese_chars
+    return int(chinese_chars * 1.5 + other_chars * 0.25) or 1
+
+
+def _get_context_window(root: Path, model: str) -> int:
+    from aios.core.models import load_model_library
+    models = load_model_library(root)
+    for m in models:
+        if m["id"] == model:
+            return m.get("context_window") or 128000
+    return 128000
+
+
+def build_context_pack(root: Path, task: dict, model: str) -> dict:
     aios_dir = require_aios(root)
     route = route_task(task, root)
     model_key = model.lower()
@@ -67,8 +84,23 @@ def build_context_pack(root: Path, task: dict, model: str) -> Path:
 
     target = aios_dir / "context-packs" / f"{task['id']}-{safe_model_name(model)}.md"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8")
-    return target
+    content = "\n".join(parts).rstrip() + "\n"
+    target.write_text(content, encoding="utf-8")
+
+    token_estimate = estimate_tokens(content)
+    context_window = _get_context_window(root, model)
+    window_usage_pct = round(token_estimate / context_window * 100, 1)
+    warning = None
+    if token_estimate > context_window * 0.9:
+        warning = "Context pack exceeds 90% of model context window"
+
+    return {
+        "path": target,
+        "token_estimate": token_estimate,
+        "context_window": context_window,
+        "window_usage_pct": window_usage_pct,
+        "warning": warning,
+    }
 
 
 def choose_relevant_files(files: list[dict], task_type: str) -> list[dict]:
@@ -81,6 +113,8 @@ def choose_relevant_files(files: list[dict], task_type: str) -> list[dict]:
     else:
         preferred = {"backend", "source", "config", "test"}
     selected = [item for item in files if item["type"] in preferred]
+    # Prefer files with git changes (higher relevance to current work)
+    selected.sort(key=lambda item: (0 if item.get("git_status") else 1, item.get("importance", "low")))
     return selected[:20]
 
 

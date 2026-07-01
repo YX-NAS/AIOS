@@ -5,6 +5,7 @@ from pathlib import Path
 from aios.core.paths import require_aios
 from aios.utils.json_utils import write_json
 from aios.utils.text import now_iso
+from aios.core.git_utils import collect_git_status, get_current_branch, get_current_commit
 
 IGNORE_DIRS = {
     ".aios",
@@ -46,6 +47,7 @@ def scan_project(root: Path) -> dict:
     files = []
     languages: set[str] = set()
     frameworks: set[str] = set()
+    git_status_map = collect_git_status(root)
 
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root)
@@ -63,6 +65,7 @@ def scan_project(root: Path) -> dict:
                     "importance": importance(relative),
                     "summary": summarize(relative),
                     "size_bytes": path.stat().st_size,
+                    "git_status": git_status_map.get(relative.as_posix()),
                 }
             )
 
@@ -80,6 +83,9 @@ def scan_project(root: Path) -> dict:
             "file_count": len(files),
             "languages": sorted(languages),
             "frameworks": sorted(frameworks),
+            "changed_files": len(git_status_map),
+            "git_branch": get_current_branch(root),
+            "git_commit": get_current_commit(root),
         },
         "files": files,
     }
@@ -157,4 +163,3 @@ def write_scan_report(path: Path, report: dict) -> None:
         body.extend(f"- `{item['path']}`：{item['summary']}" for item in high_files)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(body) + "\n", encoding="utf-8")
-

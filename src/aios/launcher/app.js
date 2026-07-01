@@ -48,11 +48,15 @@ function renderProjects() {
     return;
   }
 
+  const shouldCollapse = state.projects.length > 3;
+
   elements.projectList.innerHTML = state.projects
     .map(
-      (project) => `
-        <div class="project-card">
-          <div class="project-card-header">
+      (project, index) => {
+        const collapsed = shouldCollapse && index !== 0 ? "collapsed" : "";
+        return `
+        <div class="project-card ${collapsed}" data-project-id="${project.project_id}">
+          <div class="project-card-header" data-toggle="expand">
             <div>
               <div class="project-name">${project.name}</div>
               <div class="project-root">${project.root}</div>
@@ -60,8 +64,10 @@ function renderProjects() {
             <div class="status-tag-row">
               <span class="tag ${project.status}">${statusLabel(project.status)}</span>
               <span class="tag">${project.initialized ? "Initialized" : "Needs Init"}</span>
+              ${shouldCollapse ? '<button type="button" class="button ghost toggle-expand-button">展开</button>' : ""}
             </div>
           </div>
+          <div class="project-card-body">
           <div class="project-url">${project.url || "未启动"}</div>
           <div class="project-metrics">
             <div class="metric-tile">
@@ -91,16 +97,26 @@ function renderProjects() {
             <div><strong>技术栈：</strong>${formatList(project.languages)} / ${formatList(project.frameworks)}</div>
             <div class="small-note">最近端口：${project.port || project.last_port || "-"} | 最近任务更新时间：${project.last_task_updated_at || "-"}</div>
           </div>
-          <div class="project-actions">
-            <button type="button" class="button primary open-project-button" data-project-id="${project.project_id}">打开项目</button>
-            <button type="button" class="button secondary scan-project-button" data-project-id="${project.project_id}">扫描项目</button>
-            <button type="button" class="button ghost refresh-project-button" data-project-id="${project.project_id}">刷新状态</button>
-            <button type="button" class="button warn stop-project-button" data-project-id="${project.project_id}">停止</button>
+            <div class="project-actions">
+              <button type="button" class="button primary open-project-button" data-project-id="${project.project_id}">打开项目</button>
+              <button type="button" class="button secondary scan-project-button" data-project-id="${project.project_id}">扫描项目</button>
+              <button type="button" class="button ghost refresh-project-button" data-project-id="${project.project_id}">刷新状态</button>
+              <button type="button" class="button warn stop-project-button" data-project-id="${project.project_id}">停止</button>
+            </div>
           </div>
         </div>
       `,
     )
     .join("");
+
+  document.querySelectorAll(".toggle-expand-button").forEach((button) => {
+    button.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const card = button.closest(".project-card");
+      card.classList.toggle("collapsed");
+      button.textContent = card.classList.contains("collapsed") ? "展开" : "收起";
+    });
+  });
 
   document.querySelectorAll(".open-project-button").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -154,67 +170,60 @@ function renderProjects() {
 }
 
 function renderModels() {
+  const emptyEl = document.getElementById("modelEmpty");
   if (!state.models.length) {
-    elements.modelList.innerHTML = `<div class="empty-state">还没有全局模型配置。</div>`;
+    elements.modelList.innerHTML = "";
+    emptyEl.classList.remove("hidden");
     return;
   }
+  emptyEl.classList.add("hidden");
 
   elements.modelList.innerHTML = state.models
     .map(
       (model) => `
-        <form class="model-item" data-model-id="${model.id}">
-          <div class="model-item-header">
-            <div>
-              <div class="model-name">${model.label}</div>
-              <div class="model-meta">${model.id} / ${model.provider}</div>
-            </div>
-            <label class="model-toggle">
-              <input type="checkbox" name="enabled" ${model.enabled ? "checked" : ""} />
-              <span>启用</span>
-            </label>
-          </div>
-          <label>
-            <span>模型 ID</span>
-            <input name="modelId" value="${model.id}" required />
-          </label>
-          <label>
-            <span>显示名称</span>
-            <input name="label" value="${model.label}" />
-          </label>
-          <label>
-            <span>提供方</span>
-            <input name="provider" value="${model.provider}" placeholder="例如：openai" />
-          </label>
-          <label>
-            <span>适合任务类型</span>
-            <input name="taskTypes" value="${model.task_types.join(", ")}" placeholder="例如：bug_fix, testing" />
-          </label>
-          <label>
-            <span>推荐优先级</span>
-            <input name="rank" type="number" min="1" value="${model.rank}" />
-          </label>
-          <div class="model-item-actions">
-            <button type="submit" class="button secondary">保存</button>
+        <tr class="model-row" data-model-id="${model.id}">
+          <td><input name="modelId" value="${model.id}" required /></td>
+          <td><input name="label" value="${model.label}" /></td>
+          <td><input name="provider" value="${model.provider}" placeholder="例如：openai" /></td>
+          <td class="td-task-types"><div class="task-type-checkboxes" data-task-types="${model.task_types.join(",")}"></div></td>
+          <td><input name="rank" type="number" min="1" value="${model.rank}" class="rank-input" /></td>
+          <td class="td-checkbox"><label class="model-toggle"><input type="checkbox" name="enabled" ${model.enabled ? "checked" : ""} /><span></span></label></td>
+          <td class="td-actions">
+            <button type="button" class="button secondary save-model-button" data-model-id="${model.id}">保存</button>
             <button type="button" class="button warn delete-model-button" data-model-id="${model.id}">删除</button>
-          </div>
-        </form>
+          </td>
+        </tr>
       `,
     )
     .join("");
 
-  document.querySelectorAll(".model-item").forEach((formElement) => {
-    formElement.addEventListener("submit", async (event) => {
-      event.preventDefault();
+  // Populate task type checkboxes in each row
+  document.querySelectorAll(".task-type-checkboxes").forEach((box) => {
+    const selected = (box.dataset.taskTypes || "").split(",").map((s) => s.trim()).filter(Boolean);
+    box.innerHTML = state.modelTaskTypes
+      .map((type) => {
+        const checked = selected.includes(type) ? "checked" : "";
+        return `<label class="task-type-check"><input type="checkbox" name="taskType" value="${type}" ${checked} /><span>${type}</span></label>`;
+      })
+      .join("");
+  });
+
+  document.querySelectorAll(".save-model-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const row = button.closest(".model-row");
       await runAction(async () => {
-        const form = new FormData(formElement);
+        const enabledCheckbox = row.querySelector('input[name="enabled"]');
         const payload = {
-          current_model_id: formElement.dataset.modelId,
-          model_id: String(form.get("modelId") || "").trim(),
-          label: String(form.get("label") || "").trim(),
-          provider: String(form.get("provider") || "").trim(),
-          enabled: form.get("enabled") === "on",
-          rank: Number(form.get("rank") || 1),
-          task_types: parseTaskTypes(form.get("taskTypes")),
+          current_model_id: row.dataset.modelId,
+          model_id: String(row.querySelector('input[name="modelId"]').value || "").trim(),
+          label: String(row.querySelector('input[name="label"]').value || "").trim(),
+          provider: String(row.querySelector('input[name="provider"]').value || "").trim(),
+          enabled: enabledCheckbox.checked,
+          rank: Number(row.querySelector('input[name="rank"]').value || 1),
+          task_types: (() => {
+            const checked = row.querySelectorAll('input[name="taskType"]:checked');
+            return Array.from(checked).map((cb) => cb.value);
+          })(),
         };
         const data = await api("/api/models/update", { method: "POST", body: JSON.stringify(payload) });
         await refreshAll();
@@ -237,6 +246,7 @@ function renderModels() {
   });
 }
 
+
 function statusLabel(status) {
   if (status === "running") {
     return "运行中";
@@ -251,11 +261,18 @@ function formatList(items) {
   return items && items.length ? items.join(", ") : "未识别";
 }
 
-function parseTaskTypes(rawValue) {
-  return String(rawValue || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => state.modelTaskTypes.includes(item));
+function getSelectedTaskTypes(selectEl) {
+  const selected = [];
+  for (const option of selectEl.selectedOptions) {
+    selected.push(option.value);
+  }
+  return selected;
+}
+
+function populateTaskTypeOptions(selectEl) {
+  selectEl.innerHTML = state.modelTaskTypes
+    .map((type) => `<option value="${type}">${type}</option>`)
+    .join("");
 }
 
 async function refreshProjects() {
@@ -269,6 +286,7 @@ async function refreshModels() {
   const data = await api("/api/models");
   state.models = data.models;
   state.modelTaskTypes = data.task_types;
+  populateTaskTypeOptions(document.getElementById("createTaskTypes"));
   renderModels();
 }
 
@@ -303,7 +321,7 @@ elements.modelCreateForm.addEventListener("submit", async (event) => {
       provider: String(form.get("provider") || "").trim(),
       enabled: form.get("enabled") === "on",
       rank: Number(form.get("rank") || 1),
-      task_types: parseTaskTypes(form.get("taskTypes")),
+      task_types: getSelectedTaskTypes(formElement.querySelector('select[name="taskTypes"]')),
     };
     const data = await api("/api/models/create", { method: "POST", body: JSON.stringify(payload) });
     formElement.reset();

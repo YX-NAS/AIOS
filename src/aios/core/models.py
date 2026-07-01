@@ -9,6 +9,15 @@ from aios.utils.json_utils import read_json, write_json
 
 TASK_TYPES = list(DEFAULT_ROUTING.keys())
 
+DEFAULT_CONTEXT_WINDOWS = {
+    "gpt-5.5": 200000,
+    "claude": 200000,
+    "deepseek-v4-pro": 128000,
+    "deepseek-v4-flash": 128000,
+    "gpt-5.4-mini": 128000,
+    "minimax-m2.7-highspeed": 32000,
+}
+
 
 def default_model_library() -> list[dict]:
     model_tasks: dict[str, set[str]] = {}
@@ -29,6 +38,7 @@ def default_model_library() -> list[dict]:
                 "enabled": True,
                 "rank": index + 1,
                 "task_types": sorted(model_tasks[model]),
+                "context_window": DEFAULT_CONTEXT_WINDOWS.get(model),
             }
         )
     return models
@@ -87,6 +97,7 @@ def normalize_models(models: list[dict]) -> list[dict]:
                 "enabled": bool(model.get("enabled", True)),
                 "rank": max(1, int(model.get("rank", index + 1))),
                 "task_types": sorted(dict.fromkeys(cleaned_task_types)),
+                "context_window": model.get("context_window") or DEFAULT_CONTEXT_WINDOWS.get(model_id),
             }
         )
     _ensure_unique_ids(normalized)
@@ -114,6 +125,7 @@ def create_model(
         "enabled": enabled,
         "rank": max(1, rank),
         "task_types": _clean_task_types(task_types or []),
+        "context_window": DEFAULT_CONTEXT_WINDOWS.get(model_id),
     }
     models.append(model)
     save_model_library(root, models)

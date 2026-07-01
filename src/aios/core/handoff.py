@@ -29,7 +29,8 @@ def _resolve_pack(root: Path, task: dict, model: str, refresh_pack: bool) -> Pat
     aios_dir = require_aios(root)
     candidate = aios_dir / "context-packs" / f"{task['id']}-{safe_model_name(model)}.md"
     if refresh_pack or not candidate.exists():
-        return build_context_pack(root, task, model)
+        result = build_context_pack(root, task, model)
+        return result["path"]
     return candidate
 
 

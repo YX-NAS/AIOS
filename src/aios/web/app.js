@@ -1,6 +1,7 @@
 const state = {
   status: null,
   tasks: [],
+  taskFilter: "all",
   packs: [],
   handoffs: [],
   selectedTaskId: null,
@@ -28,6 +29,7 @@ const elements = {
   packList: document.getElementById("packList"),
   activityLog: document.getElementById("activityLog"),
   refreshButton: document.getElementById("refreshButton"),
+  taskFilterBar: document.getElementById("taskFilterBar"),
   scanButton: document.getElementById("scanButton"),
   copyCurrentPackButton: document.getElementById("copyCurrentPackButton"),
   copyHandoffButton: document.getElementById("copyHandoffButton"),
@@ -111,12 +113,18 @@ function renderStatus() {
 }
 
 function renderTasks() {
-  if (!state.tasks.length) {
-    elements.taskTableBody.innerHTML = `<tr><td colspan="4">暂无任务。</td></tr>`;
+  const filtered = state.taskFilter === "all"
+    ? state.tasks
+    : state.tasks.filter((t) => t.status === state.taskFilter);
+
+  renderTaskFilter();
+
+  if (!filtered.length) {
+    elements.taskTableBody.innerHTML = `<tr><td colspan="4">${state.tasks.length ? "当前筛选无匹配任务。" : "暂无任务。"}</td></tr>`;
     return;
   }
 
-  elements.taskTableBody.innerHTML = state.tasks
+  elements.taskTableBody.innerHTML = filtered
     .map((task) => {
       const isActive = task.id === state.selectedTaskId ? "active" : "";
       return `
@@ -135,6 +143,31 @@ function renderTasks() {
       state.selectedTaskId = row.dataset.taskId;
       renderTasks();
       await loadTaskInspector();
+    });
+  });
+}
+
+function renderTaskFilter() {
+  const counts = { all: state.tasks.length, todo: 0, done: 0 };
+  for (const t of state.tasks) {
+    if (t.status === "todo" || t.status === "doing") counts.todo++;
+    if (t.status === "done") counts.done++;
+  }
+  const filters = [
+    { key: "all", label: "全部" },
+    { key: "todo", label: "未完成" },
+    { key: "done", label: "已完成" },
+  ];
+  elements.taskFilterBar.innerHTML = filters
+    .map((f) => {
+      const active = state.taskFilter === f.key ? "filter-active" : "";
+      return `<button type="button" class="filter-btn ${active}" data-filter="${f.key}">${f.label} (${counts[f.key]})</button>`;
+    })
+    .join("");
+  elements.taskFilterBar.querySelectorAll(".filter-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.taskFilter = btn.dataset.filter;
+      renderTasks();
     });
   });
 }
@@ -203,6 +236,43 @@ async function loadTaskInspector() {
   const hasPack = state.packs.some((pack) => pack.task_id === task.id);
   elements.copyCurrentPackButton.classList.toggle("hidden", !hasPack);
 }
+
+function renderPlanPreview() {
+  const preview = state.planPreview;
+  const container = document.getElementById("planPreview");
+  if (!preview || !preview.tasks.length) {
+    container.classList.add("hidden");
+    return;
+  }
+  container.classList.remove("hidden");
+  const list = container.querySelector(".plan-preview-list");
+  list.innerHTML = preview.tasks
+    .map((task, i) => `<div class="plan-preview-item"><span class="plan-preview-type">${task.type}</span> <strong>${task.title}</strong> <span class="muted">${task.recommended_model}</span></div>`)
+    .join("");
+}
+
+document.getElementById("planConfirmButton")?.addEventListener("click", async () => {
+  const preview = state.planPreview;
+  if (!preview) return;
+  await runAction(async () => {
+    const data = await api("/api/tasks/plan", {
+      method: "POST",
+      body: JSON.stringify({ goal: preview.goal, priority: preview.priority, confirm: true }),
+    });
+    state.planPreview = null;
+    renderPlanPreview();
+    state.selectedTaskId = data.tasks[0]?.id || state.selectedTaskId;
+    await refreshDashboard();
+    const summary = data.tasks.map((task) => `${task.id} | ${task.recommended_model} | ${task.title}`).join("\n");
+    setActivity(`已创建 ${data.tasks.length} 条任务。\n${summary}`);
+  }, "确认创建失败。");
+});
+
+document.getElementById("planCancelButton")?.addEventListener("click", () => {
+  state.planPreview = null;
+  renderPlanPreview();
+  setActivity("已取消目标拆分。");
+});
 
 async function refreshDashboard() {
   const [statusData, tasksData, packsData, handoffsData] = await Promise.all([
@@ -280,12 +350,11 @@ elements.goalPlanForm.addEventListener("submit", async (event) => {
       goal: form.get("goal"),
       priority: form.get("priority"),
     };
+    // Preview first, don't create yet
     const data = await api("/api/tasks/plan", { method: "POST", body: JSON.stringify(payload) });
-    state.selectedTaskId = data.tasks[0]?.id || state.selectedTaskId;
-    formElement.reset();
-    await refreshDashboard();
-    const summary = data.tasks.map((task) => `${task.id} | ${task.recommended_model} | ${task.title}`).join("\n");
-    setActivity(`已完成目标拆分，共 ${data.tasks.length} 条任务。\n${summary}`);
+    state.planPreview = { goal: payload.goal, priority: payload.priority, tasks: data.tasks };
+    renderPlanPreview();
+    setActivity(`预览 ${data.tasks.length} 条拆分任务，确认后才会创建。`);
   }, "目标拆分失败。");
 });
 

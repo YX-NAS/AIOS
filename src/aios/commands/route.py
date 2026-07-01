@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from aios.core.router import route_task
+from aios.core.router import log_routing, route_task
 from aios.core.tasks import get_task
 
 
@@ -14,6 +14,7 @@ def add_route_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def run_route(root: Path, args: argparse.Namespace) -> None:
     route = route_task(get_task(root, args.task_id), root)
+    log_routing(root, route)
     print(f"Task: {route['title']}")
     print(f"Type: {route['type']}")
     print(f"Complexity: {route['complexity']}")

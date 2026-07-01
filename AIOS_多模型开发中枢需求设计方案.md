@@ -95,11 +95,11 @@ AIOS 要解决的是：
 
 主要能力：
 
-1. 多项目管理；
-2. 多模型 Provider 管理；
+1. 多项目管理；（已交付：launcher 首页）
+2. 多模型 Provider 管理；（已交付：全局模型库 CRUD）
 3. 模型成本统计；
-4. 任务看板；
-5. Context Pack 预览；
+4. 任务看板；（已交付：Web UI 任务台）
+5. Context Pack 预览；（已交付：Web UI Pack 列表 + 一键复制）
 6. AI 开发日志；
 7. Git Diff 分析；
 8. 模型效果评分。

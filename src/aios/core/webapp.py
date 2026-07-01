@@ -10,11 +10,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from aios.core.context_builder import build_context_pack
+from aios.core.scoring import load_scores, model_score_summary, save_score
 from aios.core.handoff import build_handoff
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
 from aios.core.project import initialize_project
-from aios.core.router import route_task
+from aios.core.router import log_routing, route_task
 from aios.core.scanner import scan_project
 from aios.core.tasks import create_task, get_task, load_tasks, plan_goal
 from aios.core.workflow import finalize_task
@@ -56,7 +57,15 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json({"task": get_task(self.project_root, task_id)})
                 if parsed.path.startswith("/api/route/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
-                    return self._send_json({"route": route_task(get_task(self.project_root, task_id), self.project_root)})
+                    route = route_task(get_task(self.project_root, task_id), self.project_root)
+                    log_routing(self.project_root, route)
+                    return self._send_json({"route": route})
+                if parsed.path == "/api/scores/summary":
+                    qs = parse_qs(parsed.query)
+                    model_filter = qs.get("model", [None])[0]
+                    return self._send_json(model_score_summary(self.project_root, model_filter))
+                if parsed.path == "/api/scores":
+                    return self._send_json({"scores": load_scores(self.project_root)})
                 if parsed.path == "/api/packs":
                     return self._send_json({"packs": list_packs(self.project_root)})
                 if parsed.path == "/api/handoffs":
@@ -124,7 +133,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         self.project_root,
                         goal,
                         payload.get("priority", "high"),
-                        create=not bool(payload.get("preview")),
+                        create=bool(payload.get("confirm")),
                     )
                     return self._send_json(
                         {
@@ -136,11 +145,15 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 if parsed.path == "/api/pack":
                     task = get_task(self.project_root, payload["task_id"])
                     model = payload.get("model") or task["recommended_model"]
-                    path = build_context_pack(self.project_root, task, model)
+                    result = build_context_pack(self.project_root, task, model)
                     return self._send_json(
                         {
                             "message": "Context pack created.",
-                            "path": str(path.relative_to(self.project_root)),
+                            "path": str(result["path"].relative_to(self.project_root)),
+                            "token_estimate": result["token_estimate"],
+                            "context_window": result["context_window"],
+                            "window_usage_pct": result["window_usage_pct"],
+                            "warning": result["warning"],
                         },
                         status=HTTPStatus.CREATED,
                     )
@@ -163,6 +176,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     if not summary:
                         raise ValueError("Completion summary is required.")
                     task = finalize_task(self.project_root, payload["task_id"], summary)
+                    score = payload.get("score")
+                    if score is not None:
+                        save_score(self.project_root, task["id"], task.get("recommended_model", "unknown"), int(score), payload.get("score_note"), task.get("type"))
                     return self._send_json({"message": "Task completed.", "task": task})
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")
             except FileNotFoundError as exc:
@@ -303,3 +319,4 @@ def pack_task_id(pack_name: str) -> str | None:
     if len(parts) < 3:
         return None
     return "-".join(parts[:3])
+from urllib.parse import urlparse, parse_qs
