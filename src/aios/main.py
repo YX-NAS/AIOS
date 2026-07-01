@@ -5,6 +5,7 @@ from pathlib import Path
 
 from aios.commands.ccswitch import add_ccswitch_parser, run_ccswitch
 from aios.commands.complete import add_complete_parser, run_complete
+from aios.commands.executor import add_executor_parser, run_executor
 from aios.commands.handoff import add_handoff_parser, run_handoff
 from aios.commands.init import add_init_parser, run_init
 from aios.commands.launcher import add_launcher_parser, run_launcher
@@ -26,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_scan_parser(subparsers)
     add_status_parser(subparsers)
     add_ccswitch_parser(subparsers)
+    add_executor_parser(subparsers)
     add_task_parser(subparsers)
     add_route_parser(subparsers)
     add_pack_parser(subparsers)
@@ -47,6 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         "scan": run_scan,
         "status": run_status,
         "ccswitch": run_ccswitch,
+        "executor": run_executor,
         "task": run_task,
         "route": run_route,
         "pack": run_pack,

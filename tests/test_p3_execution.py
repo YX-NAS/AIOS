@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import latest_execution_for_task, load_executions
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.launcher import start_launcher_server
@@ -220,3 +221,80 @@ def test_ccswitch_export_requires_execution_record(tmp_path: Path) -> None:
             assert "run --manual" in str(exc) or "HTTP Error 400" in str(exc)
     finally:
         handle.close()
+
+
+def test_run_executor_cli_executes_command_and_marks_review_pending(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    create_executor(
+        None,
+        "mock-cli",
+        label="Mock CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "import sys; print('MOCK EXECUTOR OK'); print(len(sys.argv[-1]))", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={"AIOS_TEST_EXECUTOR": "1"},
+    )
+
+    assert main(["--root", str(tmp_path), "run", task["id"], "--executor", "mock-cli"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["mode"] == "cli"
+    assert execution["status"] == "review_pending"
+    assert execution["executor_id"] == "mock-cli"
+    assert execution["executor_exit_code"] == 0
+    assert execution["executor_log_path"]
+    assert (tmp_path / execution["executor_log_path"]).exists()
+    updated_task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    assert updated_task["status"] == "running"
+
+
+def test_run_execute_api_reports_failed_executor(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "failing-cli",
+        label="Failing CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "import sys; print('boom'); sys.exit(2)", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "failing-cli"},
+        )
+        assert status_code == 201
+        assert payload["execution"]["status"] == "failed"
+        assert payload["execution"]["executor_exit_code"] == 2
+    finally:
+        handle.close()
+
+
+def test_executor_library_cli_lists_defaults(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    assert main(["executor", "reset"]) == 0
+    assert main(["executor", "list"]) == 0
+    output = capsys.readouterr().out
+    assert "manual [manual]" in output
+    assert "codex-cli [command]" in output
+    assert load_executor_library()

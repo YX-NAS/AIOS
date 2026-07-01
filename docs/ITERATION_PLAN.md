@@ -11,7 +11,17 @@
 - 多项目 Launcher：项目登记、全局模型库（表格 + 勾选框）、一键启停、执行摘要
 - 暗黑科技风 UI 主题
 
-已知短板：仍需人工切换 `ccswitch`、尚未自动调用 Codex / Claude Code、自动化调度尚未落地、操作手册尚未同步到 `P3-2`。
+当前开发中：
+
+- `P3-3` 执行器适配层原型已落地首版 CLI / API 能力
+
+已知短板：
+
+- 仍需人工切换 `ccswitch`
+- 尚未自动调用 Codex / Claude Code CLI
+- 任务拆解仍偏平面，缺少草案确认和依赖表达
+- Context Pack 还缺分层与质量校验
+- launcher 只能看到执行摘要，还看不到完整执行全貌
 
 ---
 
@@ -47,16 +57,19 @@
 | P2-3 | Git diff 分析 | `aios scan` 可读取最近 git diff，自动识别变更文件并关联任务 |
 | P2-4 | 上下文窗口预估 | pack 生成时预估 token 数，超出模型上下文窗口时警告 |
 
-### P3 — 自动化
+### P3 — 执行中枢化
 
 | 编号 | 任务 | 完成标准 |
 |------|------|---------|
 | P3-0 | 半自动执行稳定层 | `.aios/executions.json` 可追踪 prepared / running / finished；单项目 Web UI 和 launcher 可查看执行摘要 |
 | P3-1 | 统一手动执行入口 | `aios run --manual` / `run finish` 跑通一条完整半自动执行链路 |
 | P3-2 | CC Switch 集成 | 输出 `ccswitch` 兼容 JSON，可追溯到任务和执行记录 |
-| P3-3 | `aios run` 自动执行 | 选模型 → 生成 Pack → 调用模型 API → 回写，全链路闭环 |
-| P3-4 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
-| P3-5 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
+| P3-3 | Executor Adapter 原型 | 定义统一执行器接口，并至少接通 1 个稳定 CLI 执行器；失败时可回退到 `run --manual` |
+| P3-4 | 任务树与拆解草案 | 支持父子任务、依赖关系、拆解草案确认；Web UI 可修改后再写入 |
+| P3-5 | Context Engine 补强 | Pack 分层、token 预估、相关文件筛选和 Pack 质量校验落地 |
+| P3-6 | 执行总览增强 | launcher 和单项目页可显示执行器、最近测试、失败摘要、最近交付时间 |
+| P3-7 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
+| P3-8 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
 
 ### P4 — 平台化
 
@@ -71,21 +84,21 @@
 
 ## 近期重点（接下来 2 周）
 
-1. P3-3：自动执行可行性原型
-2. P3-4：自动 Git 提交
-3. P3-5：成本统计
-4. P0-2：补齐操作手册到 `P3-2`
+1. P3-3：补齐执行器库管理、自动执行 review 流和前端入口
+2. P3-4：任务树与拆解草案
+3. P3-5：Context Engine 补强
+4. P0-2：持续同步操作手册与规划文档
 5. P1：继续收口易用性细节
 
 ## 下一阶段实施目标
 
-下一阶段默认进入 `P3-3` 自动执行可行性原型，目标是：
+下一阶段默认进入“执行适配 + 拆解增强 + Context 补强”三件套，目标是：
 
-- 评估在不破坏现有半自动流程的前提下，如何把模型执行入口进一步收口
-- 先做受控原型，不直接默认接入真实自动编码
-- 保留人工确认，避免把错误自动化
+- 在不破坏现有半自动流程的前提下，先把执行器接口抽象出来
+- 先解决复杂目标拆解过浅的问题，而不是急着堆自动化
+- 先把 Pack 做稳，再扩大自动执行范围
 
-已完成的 `P3-2` 方案见 [docs/P3_2_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_2_DESIGN.md)。
+专项规划见 [docs/plans/aios-system-improvement-roadmap.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/plans/aios-system-improvement-roadmap.md)。
 
 ---
 
@@ -99,3 +112,4 @@
 | 2026-07-01 | 框体平铺去掉 max-width | 大屏幕上留白过多，信息密度优先 |
 | 2026-07-01 | `run` 成为半自动执行主入口 | `handoff` 只适合生成交接文档，不适合承载执行状态机 |
 | 2026-07-01 | `ccswitch` 先做适配输出，不直接做自动控制 | 先标准化导出，再评估稳定 CLI 或自动切换能力 |
+| 2026-07-02 | 下一阶段优先补执行器适配、任务树、Context Engine | 这三项直接对应当前最大痛点，也最能放大 AIOS 的管理价值 |

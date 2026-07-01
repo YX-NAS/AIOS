@@ -3,7 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from aios.core.executions import finish_manual_execution, latest_execution_for_task, prepare_manual_execution
+from aios.core.executions import (
+    finish_manual_execution,
+    latest_execution_for_task,
+    prepare_manual_execution,
+    run_executor_execution,
+)
 
 
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -11,6 +16,7 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `status` / `finish`.")
     parser.add_argument("task_id", nargs="?", help="Task ID for status / finish mode.")
     parser.add_argument("--manual", action="store_true", help="Prepare one manual execution.")
+    parser.add_argument("--executor", default=None, help="Run one configured executor.")
     parser.add_argument("--model", default=None, help="Execution model. Defaults to the task recommendation.")
     parser.add_argument("--refresh-pack", action="store_true", help="Rebuild the task context pack before preparing.")
     parser.add_argument("--start", action="store_true", help="Mark the execution as started immediately.")
@@ -55,8 +61,41 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         return
 
     task_id = args.run_target
-    if not args.manual or not task_id:
-        raise ValueError("Use `aios run --manual TASK-ID` or `aios run status|finish ...`.")
+    if not task_id:
+        raise ValueError("Task ID is required.")
+
+    if args.executor:
+        result = run_executor_execution(
+            root,
+            task_id,
+            args.executor,
+            model=args.model,
+            refresh_pack=args.refresh_pack,
+            note=args.note,
+        )
+        execution = result["execution"]
+        route = result["route"]
+        handoff = result["handoff"]
+        print(f"Task: {result['task']['id']}")
+        print(f"Execution: {execution['execution_id']}")
+        print(f"Executor: {result['executor']['id']}")
+        print(f"Status: {execution['status']}")
+        print(f"Planned model: {execution['planned_model']}")
+        print(f"Fallback models: {', '.join(route['fallback_models']) or '-'}")
+        print(f"Context pack: {handoff['pack_path']}")
+        print(f"Handoff: {handoff['handoff_path']}")
+        if execution.get("executor_command"):
+            print(f"Command: {execution['executor_command']}")
+        if execution.get("executor_log_path"):
+            print(f"Log: {execution['executor_log_path']}")
+        if execution["status"] == "review_pending":
+            print("Next: review the generated changes and use `aios run finish` to accept the task.")
+        elif execution["status"] == "failed":
+            print("Next: inspect the execution log, then retry or fall back to `aios run --manual`.")
+        return
+
+    if not args.manual:
+        raise ValueError("Use `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
 
     result = prepare_manual_execution(
         root,
@@ -90,5 +129,9 @@ def _print_execution(execution: dict) -> None:
     print(f"Handoff: {execution['handoff_path']}")
     print(f"Started at: {execution.get('started_at') or '-'}")
     print(f"Finished at: {execution.get('finished_at') or '-'}")
+    print(f"Executor: {execution.get('executor_id') or '-'}")
+    print(f"Command: {execution.get('executor_command') or '-'}")
+    print(f"Exit code: {execution.get('executor_exit_code') if execution.get('executor_exit_code') is not None else '-'}")
+    print(f"Log: {execution.get('executor_log_path') or '-'}")
     print(f"Test command: {execution.get('test_command') or '-'}")
     print(f"Test result: {execution.get('test_result') or '-'}")

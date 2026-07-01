@@ -11,7 +11,9 @@ from urllib.parse import urlparse
 
 from aios.core.ccswitch import export_ccswitch_payload
 from aios.core.context_builder import build_context_pack
+from aios.core.executors import executor_summary
 from aios.core.executions import execution_summary, finish_manual_execution, latest_execution_for_task, prepare_manual_execution
+from aios.core.executions import run_executor_execution
 from aios.core.scoring import load_scores, model_score_summary
 from aios.core.handoff import build_handoff
 from aios.core.models import model_summary
@@ -77,6 +79,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json({"scores": load_scores(self.project_root)})
                 if parsed.path == "/api/packs":
                     return self._send_json({"packs": list_packs(self.project_root)})
+                if parsed.path == "/api/executors":
+                    return self._send_json(executor_summary())
                 if parsed.path == "/api/handoffs":
                     return self._send_json({"handoffs": list_handoffs(self.project_root)})
                 if parsed.path == "/api/ccswitch/export":
@@ -217,6 +221,26 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         },
                         status=HTTPStatus.CREATED,
                     )
+                if parsed.path == "/api/run/execute":
+                    result = run_executor_execution(
+                        self.project_root,
+                        payload["task_id"],
+                        payload["executor_id"],
+                        (payload.get("model") or "").strip() or None,
+                        bool(payload.get("refresh_pack")),
+                        (payload.get("note") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Executor finished.",
+                            "task": result["task"],
+                            "route": result["route"],
+                            "handoff": result["handoff"],
+                            "execution": result["execution"],
+                            "executor": result["executor"],
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
                 if parsed.path == "/api/run/finish":
                     summary = (payload.get("summary") or "").strip()
                     if not summary:
@@ -277,6 +301,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "packs": list_packs(self.project_root) if initialized else [],
                 "handoffs": list_handoffs(self.project_root) if initialized else [],
                 "enabled_model_count": model_summary()["enabled_model_count"],
+                "enabled_executor_count": executor_summary()["enabled_executor_count"],
                 **(execution_summary(self.project_root) if initialized else execution_summary_empty()),
             }
 
