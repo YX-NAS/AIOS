@@ -60,6 +60,9 @@ const elements = {
   openResumeInTerminalButton: document.getElementById("openResumeInTerminalButton"),
   copyContinueLatestCommandButton: document.getElementById("copyContinueLatestCommandButton"),
   openLatestResumeInTerminalButton: document.getElementById("openLatestResumeInTerminalButton"),
+  bridgeConfirmForm: document.getElementById("bridgeConfirmForm"),
+  confirmBridgeReadyButton: document.getElementById("confirmBridgeReadyButton"),
+  confirmBridgeFailedButton: document.getElementById("confirmBridgeFailedButton"),
   initForm: document.getElementById("initForm"),
   goalPlanForm: document.getElementById("goalPlanForm"),
   taskForm: document.getElementById("taskForm"),
@@ -380,6 +383,9 @@ function renderExecution(task, execution) {
     <div class="muted">Bridge：${execution.ccswitch_bridge_path || "-"}</div>
     <div class="muted">Bridge 模式：${execution.ccswitch_bridge_mode || "-"}</div>
     <div class="muted">Bridge 状态：${execution.ccswitch_bridge_status || "-"}</div>
+    <div class="muted">Bridge 确认：${execution.ccswitch_bridge_confirmation_status || "-"}</div>
+    <div class="muted">Bridge 确认时间：${execution.ccswitch_bridge_confirmed_at || "-"}</div>
+    <div class="muted">Bridge 确认备注：${execution.ccswitch_bridge_confirmation_note || "-"}</div>
     <div class="muted">Bridge 最后步骤：${execution.ccswitch_bridge_last_step || "-"}</div>
     <div class="muted">Bridge 错误：${execution.ccswitch_bridge_error || "-"}</div>
     <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>
@@ -753,6 +759,30 @@ elements.runCcswitchBridgeButton.addEventListener("click", async () => {
     const errorLine = data.bridge.bridge_error ? `\n错误：${data.bridge.bridge_error}` : "";
     setActivity(`已启动桥接执行。\n文件：${data.bridge_path}\n模式：${data.bridge.bridge_mode}\n状态：${data.bridge.bridge_status}\n步骤：${stepSummary}${errorLine}`);
   }, "启动 ccswitch 桥接执行失败。");
+});
+
+async function confirmBridge(status) {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const note = String(new FormData(elements.bridgeConfirmForm).get("confirmation_note") || "").trim();
+    const data = await api("/api/ccswitch/confirm", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, status, note }),
+    });
+    await refreshDashboard();
+    setActivity(`已确认桥接结果。\n状态：${data.bridge.bridge_confirmation_status}\n备注：${data.bridge.bridge_confirmation_note || "-"}`);
+  }, "确认 bridge 状态失败。");
+}
+
+elements.confirmBridgeReadyButton.addEventListener("click", async () => {
+  await confirmBridge("confirmed_ready");
+});
+
+elements.confirmBridgeFailedButton.addEventListener("click", async () => {
+  await confirmBridge("confirmed_failed");
 });
 
 elements.sessionAttachForm.addEventListener("submit", async (event) => {

@@ -13,6 +13,7 @@ from aios.core.ccswitch import (
     build_ccswitch_bridge,
     build_ccswitch_deeplink,
     build_ccswitch_provider_deeplink,
+    confirm_ccswitch_bridge,
     export_ccswitch_payload,
     export_ccswitch_session_handoff,
 )
@@ -126,6 +127,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     self._send_error(HTTPStatus.NOT_FOUND, "Not found")
                     return
                 if parsed.path == "/api/ccswitch/bridge":
+                    self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+                    return
+                if parsed.path == "/api/ccswitch/confirm":
                     self._send_error(HTTPStatus.NOT_FOUND, "Not found")
                     return
                 if parsed.path.startswith("/api/packs/by-task/"):
@@ -322,6 +326,20 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(
                         {
                             "message": "ccswitch bridge exported.",
+                            **result,
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/ccswitch/confirm":
+                    result = confirm_ccswitch_bridge(
+                        self.project_root,
+                        payload["task_id"],
+                        confirmation_status=(payload.get("status") or "").strip(),
+                        note=(payload.get("note") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "ccswitch bridge confirmed.",
                             **result,
                         },
                         status=HTTPStatus.CREATED,

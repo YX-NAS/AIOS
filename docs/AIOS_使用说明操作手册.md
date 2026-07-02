@@ -97,6 +97,7 @@ aios ccswitch export TASK-ID
 aios ccswitch provider TASK-ID
 aios ccswitch session TASK-ID
 aios ccswitch bridge TASK-ID
+aios ccswitch confirm TASK-ID --status confirmed_ready
 aios task create "任务名称"
 aios task plan "目标描述"
 aios task plan "复杂目标描述" --draft
@@ -565,6 +566,24 @@ aios --root /path/to/project ccswitch bridge TASK-20260701-001 --open
 - provider 导入失败
 - prompt 导入失败
 - 还是终端恢复失败
+
+如果你已经确认外部状态没问题，还可以把结果回写给 AIOS：
+
+```bash
+aios --root /path/to/project ccswitch confirm TASK-20260701-001 --status confirmed_ready --note "已切到正确 provider 并恢复到目标会话"
+```
+
+如果 bridge 虽然发起了，但结果不可继续：
+
+```bash
+aios --root /path/to/project ccswitch confirm TASK-20260701-001 --status confirmed_failed --note "provider 已导入，但恢复到错误会话"
+```
+
+这样任务记录里就能明确区分：
+
+- bridge 动作是否执行过
+- bridge 本身是否失败
+- 外部切换结果是否确认可继续
 
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 

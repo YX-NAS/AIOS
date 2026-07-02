@@ -24,6 +24,7 @@ SESSION_HANDOFF_VERSION = "1"
 BRIDGE_VERSION = "1"
 SUPPORTED_APPS = {"claude", "codex", "gemini", "opencode", "openclaw"}
 BRIDGE_SUCCESS_STATUSES = {"completed", "prepared"}
+BRIDGE_CONFIRMATION_STATUSES = {"not_requested", "pending_confirmation", "confirmed_ready", "confirmed_failed"}
 
 
 def export_ccswitch_payload(root: Path, task_id: str, model: str | None = None) -> dict:
@@ -234,6 +235,9 @@ def build_ccswitch_bridge(
         "project_root": str(root),
         "bridge_mode": mode,
         "bridge_status": "prepared",
+        "bridge_confirmation_status": "pending_confirmation" if open_bundle else "not_requested",
+        "bridge_confirmation_note": None,
+        "bridge_confirmed_at": None,
         "bridge_last_step": None,
         "bridge_error": None,
         "bridge_started_at": None,
@@ -283,6 +287,46 @@ def build_ccswitch_bridge(
         "bridge_path": str(export_path.relative_to(root)),
         "opened": bool(opened_at),
         "opened_at": opened_at,
+        "execution": updated_execution,
+    }
+
+
+def confirm_ccswitch_bridge(
+    root: Path,
+    task_id: str,
+    confirmation_status: str,
+    note: str | None = None,
+) -> dict:
+    task = get_task(root, task_id)
+    execution = latest_execution_for_task(root, task_id)
+    if not execution:
+        raise ValueError("No execution record found. Start one execution before confirming bridge state.")
+    bridge_path_value = str(execution.get("ccswitch_bridge_path") or "").strip()
+    if not bridge_path_value:
+        raise ValueError("No ccswitch bridge record found for this task.")
+    status = str(confirmation_status or "").strip().lower()
+    if status not in {"confirmed_ready", "confirmed_failed"}:
+        raise ValueError("Bridge confirmation status must be `confirmed_ready` or `confirmed_failed`.")
+
+    bridge_path = root / bridge_path_value
+    if not bridge_path.exists():
+        raise FileNotFoundError(f"Bridge file not found: {bridge_path_value}")
+    payload = json.loads(bridge_path.read_text(encoding="utf-8"))
+    payload["bridge_confirmation_status"] = status
+    payload["bridge_confirmation_note"] = str(note or "").strip() or None
+    payload["bridge_confirmed_at"] = now_iso()
+    write_json(bridge_path, payload)
+    updated_execution = _record_bridge_confirmation(
+        root,
+        execution["execution_id"],
+        status,
+        payload["bridge_confirmation_note"],
+        payload["bridge_confirmed_at"],
+    )
+    return {
+        "task": task,
+        "bridge": payload,
+        "bridge_path": bridge_path_value,
         "execution": updated_execution,
     }
 
@@ -480,6 +524,9 @@ def _record_bridge(
         item["ccswitch_bridge_mode"] = mode
         item["ccswitch_bridge_terminal_app"] = terminal_app
         item["ccswitch_bridge_status"] = status
+        item["ccswitch_bridge_confirmation_status"] = "pending_confirmation" if opened_at or status == "failed" else "not_requested"
+        item["ccswitch_bridge_confirmation_note"] = None
+        item["ccswitch_bridge_confirmed_at"] = None
         item["ccswitch_bridge_last_step"] = last_step
         item["ccswitch_bridge_error"] = error
         item["ccswitch_bridge_started_at"] = started_at
@@ -488,6 +535,26 @@ def _record_bridge(
         if opened_at:
             item["ccswitch_bridge_opened_at"] = opened_at
         item["updated_at"] = generated_at
+        save_executions(root, executions)
+        return item
+    raise ValueError(f"Execution not found: {execution_id}")
+
+
+def _record_bridge_confirmation(
+    root: Path,
+    execution_id: str,
+    confirmation_status: str,
+    note: str | None,
+    confirmed_at: str,
+) -> dict:
+    executions = load_executions(root)
+    for item in executions:
+        if item.get("execution_id") != execution_id:
+            continue
+        item["ccswitch_bridge_confirmation_status"] = confirmation_status
+        item["ccswitch_bridge_confirmation_note"] = note
+        item["ccswitch_bridge_confirmed_at"] = confirmed_at
+        item["updated_at"] = confirmed_at
         save_executions(root, executions)
         return item
     raise ValueError(f"Execution not found: {execution_id}")

@@ -22,6 +22,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 终端继续执行方案见 [docs/P3_18_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_18_DESIGN.md)。
 `ccswitch` 桥接层方案见 [docs/P3_19_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_19_DESIGN.md)。
 桥接结果可观测层方案见 [docs/P3_20_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_20_DESIGN.md)。
+bridge 确认闭环方案见 [docs/P3_21_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_21_DESIGN.md)。
 
 ## MVP 边界
 
@@ -64,6 +65,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 - `aios run resume TASK-ID --open-terminal` 可直接在 macOS Terminal 打开恢复命令
 - `aios ccswitch bridge TASK-ID --open` 可在 macOS 上把 provider 导入、prompt 导入和终端恢复串成一条桥接动作
 - bridge 现在会记录每一步的状态、失败步骤和错误信息，便于后续重试和自动化确认
+- bridge 现在还支持显式确认结果，把外部切换收口成 `confirmed_ready` 或 `confirmed_failed`
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
@@ -119,6 +121,7 @@ aios run resume TASK-20260630-001 --latest-session
 aios run resume TASK-20260630-001 --open-terminal
 aios run resume TASK-20260630-001 --latest-session --open-terminal
 aios ccswitch bridge TASK-20260630-001 --open
+aios ccswitch confirm TASK-20260630-001 --status confirmed_ready
 aios ccswitch export TASK-20260630-001
 aios ccswitch deeplink TASK-20260630-001 --app codex --stdout
 aios ccswitch provider TASK-20260630-001 --app codex --stdout

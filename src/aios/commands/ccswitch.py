@@ -7,6 +7,7 @@ from aios.core.ccswitch import (
     build_ccswitch_deeplink,
     build_ccswitch_bridge,
     build_ccswitch_provider_deeplink,
+    confirm_ccswitch_bridge,
     export_ccswitch_payload,
     export_ccswitch_session_handoff,
     export_payload_as_text,
@@ -51,6 +52,11 @@ def add_ccswitch_parser(subparsers: argparse._SubParsersAction) -> None:
     bridge.add_argument("--stdout", action="store_true", help="Also print the bridge JSON payload to stdout.")
     bridge.add_argument("--terminal-app", default="Terminal", help="Terminal app used for the final resume step.")
     bridge.add_argument("--delay-ms", type=int, default=1200, help="Delay between provider/prompt imports and terminal resume.")
+
+    confirm = ccswitch_subparsers.add_parser("confirm", help="Confirm bridge result after external app switching.")
+    confirm.add_argument("task_id")
+    confirm.add_argument("--status", required=True, choices=["confirmed_ready", "confirmed_failed"], help="Confirmation result.")
+    confirm.add_argument("--note", default=None, help="Optional confirmation note.")
 
 
 def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
@@ -126,6 +132,21 @@ def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
             print(f"Opened at: {result['opened_at']}")
         if args.stdout:
             print(export_payload_as_text(result["bridge"]).rstrip())
+        return
+
+    if args.ccswitch_command == "confirm":
+        result = confirm_ccswitch_bridge(
+            root,
+            args.task_id,
+            confirmation_status=args.status,
+            note=args.note,
+        )
+        print(f"Confirmed {result['bridge_path']}")
+        print(f"Task: {result['task']['id']} {result['task']['title']}")
+        print(f"Confirmation: {result['bridge']['bridge_confirmation_status']}")
+        print(f"Confirmed at: {result['bridge']['bridge_confirmed_at']}")
+        if result["bridge"].get("bridge_confirmation_note"):
+            print(f"Note: {result['bridge']['bridge_confirmation_note']}")
         return
 
     raise ValueError("Unsupported ccswitch command.")
