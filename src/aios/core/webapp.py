@@ -293,6 +293,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         bool(payload.get("auto_push")),
                         (payload.get("push_remote") or "origin").strip() or "origin",
                         bool(payload.get("allow_protected_push")),
+                        bool(payload.get("auto_pr")),
+                        (payload.get("pr_base_branch") or "main").strip() or "main",
                     )
                     return self._send_json(
                         {
@@ -307,6 +309,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "reason": result.get("reason"),
                             "git_commit": result.get("git_commit"),
                             "git_push": result.get("git_push"),
+                            "git_pr": result.get("git_pr"),
                         },
                         status=HTTPStatus.CREATED,
                     )
@@ -327,6 +330,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         auto_push=bool(payload.get("auto_push")),
                         push_remote=(payload.get("push_remote") or "origin").strip() or "origin",
                         allow_protected_push=bool(payload.get("allow_protected_push")),
+                        auto_pr=bool(payload.get("auto_pr")),
+                        pr_base_branch=(payload.get("pr_base_branch") or "main").strip() or "main",
                     )
                     return self._send_json(
                         {
@@ -352,6 +357,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         auto_push=bool(payload.get("auto_push")),
                         push_remote=(payload.get("push_remote") or "origin").strip() or "origin",
                         allow_protected_push=bool(payload.get("allow_protected_push")),
+                        auto_pr=bool(payload.get("auto_pr")),
+                        pr_base_branch=(payload.get("pr_base_branch") or "main").strip() or "main",
                     )
                     return self._send_json({"message": "Task completed.", **result})
                 if parsed.path == "/api/complete":
@@ -371,6 +378,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         auto_push=bool(payload.get("auto_push")),
                         push_remote=(payload.get("push_remote") or "origin").strip() or "origin",
                         allow_protected_push=bool(payload.get("allow_protected_push")),
+                        auto_pr=bool(payload.get("auto_pr")),
+                        pr_base_branch=(payload.get("pr_base_branch") or "main").strip() or "main",
                     )
                     return self._send_json({"message": "Task completed.", **result})
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")

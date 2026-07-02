@@ -713,6 +713,38 @@ def test_run_finish_cli_skips_auto_push_on_main_by_default(tmp_path: Path, monke
     assert "Protected branch push" in (execution["auto_push_reason"] or "")
 
 
+def test_run_finish_cli_skips_auto_pr_without_successful_push(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
+    init_git_repo(tmp_path)
+    (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
+    git_commit_all(tmp_path, "init")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    git_commit_all(tmp_path, "add aios")
+    main(["--root", str(tmp_path), "task", "create", "更新主脚本", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+    (tmp_path / "main.py").write_text("print('demo 2')\n", encoding="utf-8")
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            "finish",
+            task["id"],
+            "--summary",
+            "更新主脚本完成",
+            "--auto-commit",
+            "--auto-pr",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["auto_pr_status"] == "skipped"
+    assert "No successful auto push" in (execution["auto_pr_reason"] or "")
+
+
 def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_executor(

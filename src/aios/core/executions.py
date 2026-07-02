@@ -7,6 +7,7 @@ from pathlib import Path
 
 from aios.core.executors import build_executor_command, get_executor, shell_preview
 from aios.core.git_commit import auto_commit_task_changes, git_snapshot
+from aios.core.git_pr import auto_create_pr_draft
 from aios.core.git_push import auto_push_commit
 from aios.core.handoff import build_handoff
 from aios.core.paths import require_aios
@@ -249,6 +250,8 @@ def run_executor_with_auto_finish(
     auto_push: bool = False,
     push_remote: str = "origin",
     allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
 ) -> dict:
     result = run_executor_execution(
         root,
@@ -276,6 +279,8 @@ def run_executor_with_auto_finish(
         auto_push=auto_push,
         push_remote=push_remote,
         allow_protected_push=allow_protected_push,
+        auto_pr=auto_pr,
+        pr_base_branch=pr_base_branch,
     )
     result["auto_finished"] = auto_finish_result["finished"]
     result["verification"] = auto_finish_result.get("verification")
@@ -302,6 +307,8 @@ def finish_manual_execution(
     auto_push: bool = False,
     push_remote: str = "origin",
     allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
 ) -> dict:
     executions = load_executions(root)
     active = latest_open_execution_for_task(root, task_id)
@@ -383,11 +390,38 @@ def finish_manual_execution(
             )
             execution = latest_execution_for_task(root, task_id)
 
+    pr_result = None
+    if auto_pr:
+        pr_result = auto_create_pr_draft(
+            root,
+            task,
+            summary,
+            push_result,
+            base_branch=pr_base_branch,
+        )
+        latest_execution = execution or latest_execution_for_task(root, task_id)
+        if latest_execution:
+            update_execution(
+                root,
+                latest_execution["execution_id"],
+                {
+                    "auto_pr_enabled": True,
+                    "auto_pr_status": "created" if pr_result.get("created") else "skipped",
+                    "auto_pr_reason": pr_result.get("reason"),
+                    "auto_pr_url": pr_result.get("url"),
+                    "auto_pr_number": pr_result.get("number"),
+                    "auto_pr_base_branch": pr_result.get("base_branch"),
+                    "updated_at": now_iso(),
+                },
+            )
+            execution = latest_execution_for_task(root, task_id)
+
     return {
         "task": task,
         "execution": execution or latest_execution_for_task(root, task_id),
         "git_commit": commit_result,
         "git_push": push_result,
+        "git_pr": pr_result,
     }
 
 
@@ -403,6 +437,8 @@ def auto_finish_execution(
     auto_push: bool = False,
     push_remote: str = "origin",
     allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
 ) -> dict:
     if not summary:
         raise ValueError("Use `--summary` when enabling auto finish.")
@@ -448,6 +484,8 @@ def auto_finish_execution(
         auto_push=auto_push,
         push_remote=push_remote,
         allow_protected_push=allow_protected_push,
+        auto_pr=auto_pr,
+        pr_base_branch=pr_base_branch,
     )
     return {
         "finished": True,
@@ -575,6 +613,12 @@ def prepare_execution_record(
         "auto_push_reason": None,
         "auto_push_remote": None,
         "auto_push_branch": None,
+        "auto_pr_enabled": False,
+        "auto_pr_status": None,
+        "auto_pr_reason": None,
+        "auto_pr_url": None,
+        "auto_pr_number": None,
+        "auto_pr_base_branch": None,
         "updated_at": timestamp,
     }
     executions.append(execution)

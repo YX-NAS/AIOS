@@ -23,6 +23,8 @@ def auto_progress_next_step(
     auto_push: bool = False,
     push_remote: str = "origin",
     allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
 ) -> dict:
     before = scheduler_summary(root)
     next_action = before.get("next_action")
@@ -40,6 +42,8 @@ def auto_progress_next_step(
             auto_push=auto_push,
             push_remote=push_remote,
             allow_protected_push=allow_protected_push,
+            auto_pr=auto_pr,
+            pr_base_branch=pr_base_branch,
         )
         return {
             "progressed": finish_result["finished"],
@@ -91,6 +95,8 @@ def auto_progress_next_step(
         auto_push=auto_push,
         push_remote=push_remote,
         allow_protected_push=allow_protected_push,
+        auto_pr=auto_pr,
+        pr_base_branch=pr_base_branch,
     )
     return {
         "progressed": True,
