@@ -7,6 +7,7 @@ from pathlib import Path
 
 from aios.core.executors import build_executor_command, get_executor, shell_preview
 from aios.core.git_commit import auto_commit_task_changes, git_snapshot
+from aios.core.git_push import auto_push_commit
 from aios.core.handoff import build_handoff
 from aios.core.paths import require_aios
 from aios.core.router import route_task
@@ -245,6 +246,9 @@ def run_executor_with_auto_finish(
     score: int | None = None,
     score_note: str | None = None,
     auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
 ) -> dict:
     result = run_executor_execution(
         root,
@@ -269,6 +273,9 @@ def run_executor_with_auto_finish(
         score=score,
         score_note=score_note,
         auto_commit=auto_commit,
+        auto_push=auto_push,
+        push_remote=push_remote,
+        allow_protected_push=allow_protected_push,
     )
     result["auto_finished"] = auto_finish_result["finished"]
     result["verification"] = auto_finish_result.get("verification")
@@ -292,6 +299,9 @@ def finish_manual_execution(
     score: int | None = None,
     score_note: str | None = None,
     auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
 ) -> dict:
     executions = load_executions(root)
     active = latest_open_execution_for_task(root, task_id)
@@ -349,10 +359,35 @@ def finish_manual_execution(
             )
             execution = latest_execution_for_task(root, task_id)
 
+    push_result = None
+    if auto_push:
+        push_result = auto_push_commit(
+            root,
+            commit_result,
+            remote=push_remote,
+            allow_protected=allow_protected_push,
+        )
+        latest_execution = execution or latest_execution_for_task(root, task_id)
+        if latest_execution:
+            update_execution(
+                root,
+                latest_execution["execution_id"],
+                {
+                    "auto_push_enabled": True,
+                    "auto_push_status": "pushed" if push_result.get("pushed") else "skipped",
+                    "auto_push_reason": push_result.get("reason"),
+                    "auto_push_remote": push_result.get("remote"),
+                    "auto_push_branch": push_result.get("branch"),
+                    "updated_at": now_iso(),
+                },
+            )
+            execution = latest_execution_for_task(root, task_id)
+
     return {
         "task": task,
         "execution": execution or latest_execution_for_task(root, task_id),
         "git_commit": commit_result,
+        "git_push": push_result,
     }
 
 
@@ -365,6 +400,9 @@ def auto_finish_execution(
     score: int | None = None,
     score_note: str | None = None,
     auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
 ) -> dict:
     if not summary:
         raise ValueError("Use `--summary` when enabling auto finish.")
@@ -407,6 +445,9 @@ def auto_finish_execution(
         score=score,
         score_note=score_note,
         auto_commit=auto_commit,
+        auto_push=auto_push,
+        push_remote=push_remote,
+        allow_protected_push=allow_protected_push,
     )
     return {
         "finished": True,
@@ -529,6 +570,11 @@ def prepare_execution_record(
         "auto_commit_reason": None,
         "auto_commit_paths": None,
         "auto_commit_subject": None,
+        "auto_push_enabled": False,
+        "auto_push_status": None,
+        "auto_push_reason": None,
+        "auto_push_remote": None,
+        "auto_push_branch": None,
         "updated_at": timestamp,
     }
     executions.append(execution)

@@ -351,6 +351,7 @@ function renderExecution(task, execution) {
     <div class="muted">计划模型：${execution.planned_model || task.recommended_model}</div>
     <div class="muted">实际模型：${execution.actual_model || "-"}</div>
     <div class="muted">自动提交：${execution.auto_commit_status || "-"}</div>
+    <div class="muted">自动 Push：${execution.auto_push_status || "-"}</div>
     <div class="muted">最近导出模型：${execution.ccswitch_export_model || "-"}</div>
     <div class="muted">Deep Link 应用：${execution.ccswitch_deeplink_app || "-"}</div>
     <div class="muted">Pack：${execution.pack_path || "-"}</div>
@@ -361,6 +362,7 @@ function renderExecution(task, execution) {
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
     <div class="muted">提交后版本：${execution.git_commit_after || "-"}</div>
+    <div class="muted">Push 远端：${execution.auto_push_remote || "-"}</div>
   `;
 }
 
@@ -599,6 +601,7 @@ elements.dispatchNextButton.addEventListener("click", async () => {
     const scoreRaw = completeForm.get("score");
     const scoreNote = (completeForm.get("score_note") || "").trim();
     const autoCommit = completeForm.get("auto_commit") === "on";
+    const autoPush = completeForm.get("auto_push") === "on";
     const data = await api("/api/run/dispatch", {
       method: "POST",
       body: JSON.stringify({
@@ -609,6 +612,7 @@ elements.dispatchNextButton.addEventListener("click", async () => {
         score: scoreRaw ? Number(scoreRaw) : null,
         score_note: scoreNote || null,
         auto_commit: autoCommit,
+        auto_push: autoPush,
       }),
     });
     await refreshDashboard();
@@ -621,13 +625,16 @@ elements.dispatchNextButton.addEventListener("click", async () => {
     const gitLine = data.git_commit
       ? (data.git_commit.committed ? `\nGit 提交：${data.git_commit.commit}` : `\nGit 提交跳过：${data.git_commit.reason}`)
       : "";
+    const pushLine = data.git_push
+      ? (data.git_push.pushed ? `\nGit Push：${data.git_push.remote}/${data.git_push.branch}` : `\nGit Push 跳过：${data.git_push.reason}`)
+      : "";
     if (data.auto_finished && !data.dispatched) {
-      setActivity(`已自动完成 ${data.task.id}。\n状态：${data.execution.status}${data.verification ? `\n验证：${data.verification.summary}` : ""}${gitLine}`);
+      setActivity(`已自动完成 ${data.task.id}。\n状态：${data.execution.status}${data.verification ? `\n验证：${data.verification.summary}` : ""}${gitLine}${pushLine}`);
       return;
     }
     const verificationLine = data.verification ? `\n验证：${data.verification.summary}` : "";
     const finishLine = data.auto_finished ? "\n任务已自动完成并回写。" : "";
-    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}${verificationLine}${finishLine}${gitLine}`);
+    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}${verificationLine}${finishLine}${gitLine}${pushLine}`);
   }, "自动派发下一任务失败。");
 });
 
@@ -696,6 +703,7 @@ elements.completeForm.addEventListener("submit", async (event) => {
       score: form.get("score") ? Number(form.get("score")) : null,
       score_note: form.get("score_note"),
       auto_commit: form.get("auto_commit") === "on",
+      auto_push: form.get("auto_push") === "on",
     };
     const data = await api("/api/complete", { method: "POST", body: JSON.stringify(payload) });
     formElement.reset();
@@ -703,7 +711,10 @@ elements.completeForm.addEventListener("submit", async (event) => {
     const gitLine = data.git_commit
       ? (data.git_commit.committed ? `\nGit 提交：${data.git_commit.commit}` : `\nGit 提交跳过：${data.git_commit.reason}`)
       : "";
-    setActivity(`已完成任务 ${data.task.id}。${gitLine}`);
+    const pushLine = data.git_push
+      ? (data.git_push.pushed ? `\nGit Push：${data.git_push.remote}/${data.git_push.branch}` : `\nGit Push 跳过：${data.git_push.reason}`)
+      : "";
+    setActivity(`已完成任务 ${data.task.id}。${gitLine}${pushLine}`);
   }, "完成任务失败。");
 });
 

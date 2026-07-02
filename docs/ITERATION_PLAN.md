@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-11`，核心功能包括：
+当前版本已交付到 `P3-12`，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -21,6 +21,7 @@
 - `P3-8` 自动完成收口已落地首版 CLI / API / Web 自动回写能力
 - `P3-10` 自动 Git 提交已落地首版 CLI / API / Web 自动本地提交能力
 - `P3-11` 外部模型切换接管已落地首版 Deep Link 导入能力
+- `P3-12` 自动 Push 已落地首版特性分支远端交付能力
 
 已知短板：
 
@@ -32,6 +33,7 @@
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
 - 只支持本地自动 commit，还没有自动 push / PR
 - 当前只接通 `ccswitch` prompt Deep Link，还没有 provider / session 级自动切换
+- 还没有自动创建 PR，远端交付还停在分支 push
 
 ---
 
@@ -83,8 +85,9 @@
 | P3-9 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
 | P3-10 | 自动 Git 提交 | `run finish --auto-commit` / `run auto --auto-commit` 支持受控本地提交 |
 | P3-11 | 外部模型切换接管 | `ccswitch deeplink` / `/api/ccswitch/deeplink` 支持导入 handoff prompt |
-| P3-12 | 自动 Push / PR | 任务完成后可选择自动 push 并生成 PR 草案 |
+| P3-12 | 自动 Push / 远程交付 | `run ... --auto-push` 支持特性分支自动 push |
 | P3-13 | Provider / Session 接管 | 补 provider deep link、会话恢复与继续执行策略 |
+| P3-14 | 自动 PR 草案 | 在 push 成功后生成 PR 草案或交付建议 |
 
 ### P4 — 平台化
 
@@ -100,8 +103,8 @@
 ## 近期重点（接下来 2 周）
 
 1. P3-9：补齐成本与执行统计
-2. P3-12：设计自动 Push / PR 边界
-3. P3-13：补 provider / session 接管策略
+2. P3-13：补 provider / session 接管策略
+3. P3-14：设计自动 PR 草案边界
 4. P3-4：补齐任务树可视化和更细粒度编辑
 5. P0-2：持续同步操作手册与规划文档
 
@@ -132,3 +135,4 @@
 | 2026-07-02 | 自动收口要求显式 `summary`，验证失败时保持 `review_pending` | 先保证收口可控、可审计，避免误把失败任务标记为完成 |
 | 2026-07-02 | 自动 Git 提交只在执行开始前非 `.aios/` 工作区干净时生效 | 避免把用户已有脏改动误一起提交，同时不让 `.aios/` 元数据阻塞自动化 |
 | 2026-07-02 | `ccswitch` 先接官方 Deep Link 的 prompt 导入，不直接假设稳定 CLI | 先用已公开且可验证的入口缩短人工切换路径，再逐步扩大自动化范围 |
+| 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |

@@ -83,7 +83,7 @@ def project_yaml(name: str, project_type: str) -> str:
   framework: {{}}
   owner: ""
 aios:
-  version: "0.12.0"
+  version: "0.13.0"
   initialized_at: "{today()}"
   last_scan_at: null
   default_model: "gpt-5.5"

@@ -20,6 +20,9 @@ def auto_progress_next_step(
     score: int | None = None,
     score_note: str | None = None,
     auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
 ) -> dict:
     before = scheduler_summary(root)
     next_action = before.get("next_action")
@@ -34,6 +37,9 @@ def auto_progress_next_step(
             score=score,
             score_note=score_note,
             auto_commit=auto_commit,
+            auto_push=auto_push,
+            push_remote=push_remote,
+            allow_protected_push=allow_protected_push,
         )
         return {
             "progressed": finish_result["finished"],
@@ -82,6 +88,9 @@ def auto_progress_next_step(
         score=score,
         score_note=score_note,
         auto_commit=auto_commit,
+        auto_push=auto_push,
+        push_remote=push_remote,
+        allow_protected_push=allow_protected_push,
     )
     return {
         "progressed": True,

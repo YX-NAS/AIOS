@@ -33,6 +33,9 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--auto-finish", action="store_true", help="Automatically finish one review_pending execution when possible.")
     parser.add_argument("--verify-command", default=None, help="Verification command to run before auto finish.")
     parser.add_argument("--auto-commit", action="store_true", help="Automatically commit git changes after finish when the repo was clean before execution.")
+    parser.add_argument("--auto-push", action="store_true", help="Automatically push the current branch after one auto commit.")
+    parser.add_argument("--push-remote", default="origin", help="Git remote used for auto push. Defaults to origin.")
+    parser.add_argument("--allow-protected-push", action="store_true", help="Allow auto push on protected branches like main/master.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
@@ -50,6 +53,9 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             score=args.score,
             score_note=args.score_note,
             auto_commit=args.auto_commit,
+            auto_push=args.auto_push,
+            push_remote=args.push_remote,
+            allow_protected_push=args.allow_protected_push,
         )
         if not result["progressed"]:
             print(f"Auto dispatch skipped: {result['reason']}")
@@ -66,6 +72,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             if result.get("verification"):
                 print(f"Verification: {result['verification']['summary']}")
             _print_git_commit(result.get("git_commit"))
+            _print_git_push(result.get("git_push"))
             return
         execution = result["execution"]
         route = result["route"]
@@ -87,6 +94,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
         _print_git_commit(result.get("git_commit"))
+        _print_git_push(result.get("git_push"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
         elif execution["status"] == "review_pending":
@@ -107,6 +115,9 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             score=args.score,
             score_note=args.score_note,
             auto_commit=args.auto_commit,
+            auto_push=args.auto_push,
+            push_remote=args.push_remote,
+            allow_protected_push=args.allow_protected_push,
         )
         if not result["finished"]:
             print(f"Auto finish skipped: {result['reason']}")
@@ -117,6 +128,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
         _print_git_commit(result.get("git_commit"))
+        _print_git_push(result.get("git_push"))
         print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
         return
 
@@ -145,11 +157,15 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             score=args.score,
             score_note=args.score_note,
             auto_commit=args.auto_commit,
+            auto_push=args.auto_push,
+            push_remote=args.push_remote,
+            allow_protected_push=args.allow_protected_push,
         )
         print(f"Finished {result['task']['id']}: {result['task']['title']}")
         if result["execution"]:
             print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
         _print_git_commit(result.get("git_commit"))
+        _print_git_push(result.get("git_push"))
         return
 
     task_id = args.run_target
@@ -171,6 +187,9 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             score=args.score,
             score_note=args.score_note,
             auto_commit=args.auto_commit,
+            auto_push=args.auto_push,
+            push_remote=args.push_remote,
+            allow_protected_push=args.allow_protected_push,
         )
         execution = result["execution"]
         route = result["route"]
@@ -190,6 +209,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
         _print_git_commit(result.get("git_commit"))
+        _print_git_push(result.get("git_push"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
         elif execution["status"] == "review_pending":
@@ -242,6 +262,9 @@ def _print_execution(execution: dict) -> None:
     print(f"Git clean before: {execution.get('git_is_clean_before')}")
     print(f"Auto commit: {execution.get('auto_commit_status') or '-'}")
     print(f"Git commit after: {execution.get('git_commit_after') or '-'}")
+    print(f"Auto push: {execution.get('auto_push_status') or '-'}")
+    print(f"Push remote: {execution.get('auto_push_remote') or '-'}")
+    print(f"Push branch: {execution.get('auto_push_branch') or '-'}")
 
 
 def _print_git_commit(commit: dict | None) -> None:
@@ -252,3 +275,13 @@ def _print_git_commit(commit: dict | None) -> None:
         return
     if commit.get("reason"):
         print(f"Git commit skipped: {commit['reason']}")
+
+
+def _print_git_push(push: dict | None) -> None:
+    if not push:
+        return
+    if push.get("pushed"):
+        print(f"Git push: {push.get('remote')}/{push.get('branch')} @ {push.get('commit')}")
+        return
+    if push.get("reason"):
+        print(f"Git push skipped: {push['reason']}")

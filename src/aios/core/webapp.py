@@ -290,6 +290,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         int(payload["score"]) if payload.get("score") is not None else None,
                         (payload.get("score_note") or "").strip() or None,
                         bool(payload.get("auto_commit")),
+                        bool(payload.get("auto_push")),
+                        (payload.get("push_remote") or "origin").strip() or "origin",
+                        bool(payload.get("allow_protected_push")),
                     )
                     return self._send_json(
                         {
@@ -303,6 +306,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "verification": result.get("verification"),
                             "reason": result.get("reason"),
                             "git_commit": result.get("git_commit"),
+                            "git_push": result.get("git_push"),
                         },
                         status=HTTPStatus.CREATED,
                     )
@@ -320,6 +324,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         score=int(payload["score"]) if payload.get("score") is not None else None,
                         score_note=(payload.get("score_note") or "").strip() or None,
                         auto_commit=bool(payload.get("auto_commit")),
+                        auto_push=bool(payload.get("auto_push")),
+                        push_remote=(payload.get("push_remote") or "origin").strip() or "origin",
+                        allow_protected_push=bool(payload.get("allow_protected_push")),
                     )
                     return self._send_json(
                         {
@@ -342,6 +349,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         score=int(payload["score"]) if payload.get("score") is not None else None,
                         score_note=(payload.get("score_note") or "").strip() or None,
                         auto_commit=bool(payload.get("auto_commit")),
+                        auto_push=bool(payload.get("auto_push")),
+                        push_remote=(payload.get("push_remote") or "origin").strip() or "origin",
+                        allow_protected_push=bool(payload.get("allow_protected_push")),
                     )
                     return self._send_json({"message": "Task completed.", **result})
                 if parsed.path == "/api/complete":
@@ -358,6 +368,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         score=int(payload["score"]) if payload.get("score") is not None else None,
                         score_note=(payload.get("score_note") or "").strip() or None,
                         auto_commit=bool(payload.get("auto_commit")),
+                        auto_push=bool(payload.get("auto_push")),
+                        push_remote=(payload.get("push_remote") or "origin").strip() or "origin",
+                        allow_protected_push=bool(payload.get("allow_protected_push")),
                     )
                     return self._send_json({"message": "Task completed.", **result})
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")

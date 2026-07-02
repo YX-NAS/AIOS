@@ -14,6 +14,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 自动完成收口方案见 [docs/P3_8_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_8_DESIGN.md)。
 自动 Git 提交方案见 [docs/P3_10_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_10_DESIGN.md)。
 外部模型切换接管方案见 [docs/P3_11_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_11_DESIGN.md)。
+自动 Push 方案见 [docs/P3_12_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_12_DESIGN.md)。
 
 ## MVP 边界
 
@@ -45,6 +46,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 - `aios run auto [--executor ...]` 可自动选择下一条 `ready` 任务并派发到执行器
 - `aios run ... --auto-finish --summary "..." --verify-command "..."` 可在验证通过后自动完成任务回写
 - `aios run ... --auto-commit` 可在受控条件下自动生成本地 Git commit
+- `aios run ... --auto-push` 可在特性分支上继续自动 push 到远端
 - `aios ccswitch deeplink TASK-ID` 可直接生成 `ccswitch://` Deep Link，把 handoff 导入 CC Switch
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
@@ -87,8 +89,10 @@ aios run TASK-20260630-001 --executor codex-cli
 aios run auto --executor codex-cli
 aios run auto --executor codex-cli --auto-finish --summary "完成登录功能并通过测试" --verify-command "pytest -q"
 aios run auto --executor codex-cli --auto-finish --summary "完成登录功能并通过测试" --verify-command "pytest -q" --auto-commit
+aios run auto --executor codex-cli --auto-finish --summary "完成登录功能并通过测试" --verify-command "pytest -q" --auto-commit --auto-push
 aios run approve TASK-20260630-001 --summary "确认交付" --verify-command "pytest -q"
 aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" --auto-commit
+aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" --auto-commit --auto-push
 aios run status TASK-20260630-001
 aios ccswitch export TASK-20260630-001
 aios ccswitch deeplink TASK-20260630-001 --app codex --stdout
@@ -142,6 +146,7 @@ http://127.0.0.1:8765
 - 自动派发下一条可执行任务
 - 自动推进 `review_pending -> done`
 - 自动完成后本地 Git 提交
+- 自动 push 当前特性分支
 - 生成并复制 ccswitch Deep Link
 - 生成 Context Pack
 - 导出 `ccswitch` 适配文件或复制 JSON

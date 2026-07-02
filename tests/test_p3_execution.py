@@ -38,6 +38,26 @@ def git_commit_all(root: Path, message: str) -> None:
     subprocess.run(["git", "commit", "-m", message], cwd=str(root), capture_output=True, check=False, timeout=10)
 
 
+def git_checkout_new_branch(root: Path, branch: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", "checkout", "-b", branch], cwd=str(root), capture_output=True, check=False, timeout=10)
+
+
+def git_add_remote(root: Path, remote: str, target: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "remote", "add", remote, str(target)], cwd=str(root), capture_output=True, check=False, timeout=10)
+
+
+def init_bare_remote(root: Path) -> Path:
+    import subprocess
+
+    remote = root.parent / f"{root.name}-remote.git"
+    subprocess.run(["git", "init", "--bare", str(remote)], capture_output=True, check=False, timeout=10)
+    return remote
+
+
 def test_run_manual_cli_creates_and_finishes_execution(tmp_path: Path) -> None:
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
@@ -618,6 +638,79 @@ def test_run_execute_api_can_auto_commit_after_finish(tmp_path: Path, monkeypatc
         assert payload["git_commit"]["committed"] is True
     finally:
         handle.close()
+
+
+def test_run_finish_cli_can_auto_push_feature_branch(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
+    init_git_repo(tmp_path)
+    remote = init_bare_remote(tmp_path)
+    git_checkout_new_branch(tmp_path, "feature/auto-push")
+    git_add_remote(tmp_path, "origin", remote)
+    (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
+    git_commit_all(tmp_path, "init")
+    __import__("subprocess").run(["git", "push", "-u", "origin", "feature/auto-push"], cwd=str(tmp_path), capture_output=True, check=False, timeout=10)
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    git_commit_all(tmp_path, "add aios")
+    __import__("subprocess").run(["git", "push"], cwd=str(tmp_path), capture_output=True, check=False, timeout=10)
+    main(["--root", str(tmp_path), "task", "create", "更新主脚本", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+    (tmp_path / "main.py").write_text("print('demo 2')\n", encoding="utf-8")
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            "finish",
+            task["id"],
+            "--summary",
+            "更新主脚本完成",
+            "--auto-commit",
+            "--auto-push",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["auto_push_status"] == "pushed"
+    assert execution["auto_push_branch"] == "feature/auto-push"
+
+
+def test_run_finish_cli_skips_auto_push_on_main_by_default(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
+    init_git_repo(tmp_path)
+    remote = init_bare_remote(tmp_path)
+    git_add_remote(tmp_path, "origin", remote)
+    (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
+    git_commit_all(tmp_path, "init")
+    __import__("subprocess").run(["git", "push", "-u", "origin", "master"], cwd=str(tmp_path), capture_output=True, check=False, timeout=10)
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    git_commit_all(tmp_path, "add aios")
+    __import__("subprocess").run(["git", "push"], cwd=str(tmp_path), capture_output=True, check=False, timeout=10)
+    main(["--root", str(tmp_path), "task", "create", "更新主脚本", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+    (tmp_path / "main.py").write_text("print('demo 2')\n", encoding="utf-8")
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            "finish",
+            task["id"],
+            "--summary",
+            "更新主脚本完成",
+            "--auto-commit",
+            "--auto-push",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["auto_push_status"] == "skipped"
+    assert "Protected branch push" in (execution["auto_push_reason"] or "")
 
 
 def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path: Path, monkeypatch) -> None:
