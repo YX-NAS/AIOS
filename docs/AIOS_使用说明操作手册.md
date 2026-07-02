@@ -107,6 +107,9 @@ aios route TASK-ID
 aios pack TASK-ID --model gpt-5.5
 aios run --manual TASK-ID --start
 aios run TASK-ID --executor codex-cli
+aios run attach TASK-ID --executor codex-cli --session-id session-123
+aios run resume TASK-ID
+aios run resume TASK-ID --latest-session
 aios run status TASK-ID
 aios run finish TASK-ID --summary "完成说明"
 aios handoff TASK-ID --model gpt-5.5
@@ -497,6 +500,31 @@ aios --root /path/to/project ccswitch session TASK-20260701-001 --app codex
 - project root
 - session 搜索关键词
 - 恢复建议步骤
+
+### 第 7.6 步：把真实执行会话挂接到任务
+
+如果你已经在 Codex CLI 或 Claude Code CLI 里开始了真实开发，可以把会话引用回写到 AIOS：
+
+```bash
+aios --root /path/to/project run attach TASK-20260701-001 --executor codex-cli --session-id session-123
+```
+
+这样 AIOS 会记录：
+
+- 当前任务对应的执行器
+- 当前会话引用
+- 恢复命令
+- 继续最近会话命令
+
+### 第 7.7 步：生成恢复命令
+
+```bash
+aios --root /path/to/project run resume TASK-20260701-001
+aios --root /path/to/project run resume TASK-20260701-001 --latest-session
+```
+
+第一条优先使用已经挂接的会话引用。  
+第二条强制生成“继续最近会话”的命令。
 
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 

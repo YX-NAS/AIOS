@@ -17,6 +17,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 自动 Push 方案见 [docs/P3_12_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_12_DESIGN.md)。
 Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_13_DESIGN.md)。
 自动 PR 草案方案见 [docs/P3_14_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_14_DESIGN.md)。
+执行会话恢复入口方案见 [docs/P3_16_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_16_DESIGN.md)。
 
 ## MVP 边界
 
@@ -55,6 +56,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 - `aios ccswitch deeplink TASK-ID` 可直接生成 `ccswitch://` Deep Link，把 handoff 导入 CC Switch
 - `aios ccswitch provider TASK-ID` 可直接生成 `resource=provider` Deep Link，把模型对应的 provider 配置导入 CC Switch
 - `aios ccswitch session TASK-ID` 可导出包含 provider/prompt deeplink 和恢复提示的 Session Handoff
+- `aios run attach TASK-ID` / `aios run resume TASK-ID` 可把真实执行会话挂接到任务上，并生成恢复命令
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
 ## 安装与运行
@@ -103,6 +105,9 @@ aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" 
 aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" --auto-commit --auto-push
 aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" --auto-commit --auto-push --auto-pr
 aios run status TASK-20260630-001
+aios run attach TASK-20260630-001 --executor codex-cli --session-id session-123
+aios run resume TASK-20260630-001
+aios run resume TASK-20260630-001 --latest-session
 aios ccswitch export TASK-20260630-001
 aios ccswitch deeplink TASK-20260630-001 --app codex --stdout
 aios ccswitch provider TASK-20260630-001 --app codex --stdout
@@ -162,6 +167,7 @@ http://127.0.0.1:8765
 - 生成并复制 ccswitch Deep Link
 - 生成并复制 Provider Deep Link
 - 导出并复制 Session Handoff
+- 挂接任务执行会话并复制恢复命令
 - 生成 Context Pack
 - 导出 `ccswitch` 适配文件或复制 JSON
 - 生成并复制任务交接单
@@ -240,6 +246,7 @@ python -m pytest
 - `aios ccswitch export` 能导出可追溯的 `ccswitch` 适配 JSON；
 - `aios ccswitch provider` 能导出可追溯的 provider Deep Link；
 - `aios ccswitch session` 能导出可追溯的 Session Handoff；
+- `aios run attach` / `aios run resume` 能为任务生成可追溯的会话恢复入口；
 - `aios run finish` 能更新执行记录、任务状态、`changelog.md` 和 `memory.md`；
 - `aios complete` 能更新任务状态、`changelog.md` 和 `memory.md`；
 - `aios web` 能启动本地可视化控制台；

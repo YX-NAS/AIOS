@@ -220,6 +220,27 @@
                 <button id="copyCcswitchButton" type="button" class="button subtle wide">复制 ccswitch JSON</button>
                 <button id="copyHandoffButton" type="button" class="button secondary wide">生成并复制任务交接单</button>
                 <button id="copyCurrentPackButton" type="button" class="button subtle wide hidden">复制当前任务最新 Context Pack</button>
+                <form id="sessionAttachForm" class="stack-form slim">
+                  <label>
+                    <span>执行器 ID</span>
+                    <input name="executor_id" placeholder="例如：codex-cli / claude-code-cli" />
+                  </label>
+                  <label>
+                    <span>会话 ID</span>
+                    <input name="session_id" placeholder="例如：UUID 或 CLI 会话 ID" />
+                  </label>
+                  <label>
+                    <span>会话名称（可选）</span>
+                    <input name="session_name" placeholder="例如：昨天的登录修复会话" />
+                  </label>
+                  <label>
+                    <span>会话备注（可选）</span>
+                    <input name="session_note" placeholder="例如：已在 Codex 中开始调试" />
+                  </label>
+                  <button type="submit" class="button secondary wide">挂接当前会话</button>
+                </form>
+                <button id="copyResumeCommandButton" type="button" class="button secondary wide">复制恢复命令</button>
+                <button id="copyContinueLatestCommandButton" type="button" class="button subtle wide">复制最近会话继续命令</button>
                 <form id="completeForm" class="stack-form slim">
                   <label>
                     <span>实际模型</span>

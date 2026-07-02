@@ -24,6 +24,10 @@ def default_executor_library() -> list[dict]:
                 "timeout_seconds": None,
                 "pass_model_as_flag": False,
                 "env": {},
+                "resume_args": [],
+                "continue_args": [],
+                "resume_in_project_root": True,
+                "session_ref_label": "session",
             },
             {
                 "id": "codex-cli",
@@ -36,6 +40,10 @@ def default_executor_library() -> list[dict]:
                 "timeout_seconds": 1800,
                 "pass_model_as_flag": True,
                 "env": {},
+                "resume_args": ["resume", "{session_ref}"],
+                "continue_args": ["resume", "--last"],
+                "resume_in_project_root": True,
+                "session_ref_label": "session_id",
             },
             {
                 "id": "claude-code-cli",
@@ -48,6 +56,10 @@ def default_executor_library() -> list[dict]:
                 "timeout_seconds": 1800,
                 "pass_model_as_flag": False,
                 "env": {},
+                "resume_args": ["--resume", "{session_ref}"],
+                "continue_args": ["--continue"],
+                "resume_in_project_root": True,
+                "session_ref_label": "session_id_or_name",
             },
         ]
     )
@@ -115,6 +127,10 @@ def create_executor(
     timeout_seconds: int | None = None,
     pass_model_as_flag: bool = False,
     env: dict[str, str] | None = None,
+    resume_args: list[str] | None = None,
+    continue_args: list[str] | None = None,
+    resume_in_project_root: bool = True,
+    session_ref_label: str | None = None,
 ) -> dict:
     executors = load_executor_library(root)
     cleaned_id = _clean_executor_id(executor_id)
@@ -131,6 +147,10 @@ def create_executor(
         "timeout_seconds": timeout_seconds if timeout_seconds and timeout_seconds > 0 else None,
         "pass_model_as_flag": bool(pass_model_as_flag),
         "env": _clean_env(env or {}),
+        "resume_args": [str(arg) for arg in (resume_args or [])],
+        "continue_args": [str(arg) for arg in (continue_args or [])],
+        "resume_in_project_root": bool(resume_in_project_root),
+        "session_ref_label": _clean_session_ref_label(session_ref_label),
     }
     executors.append(executor)
     save_executor_library(root, executors)
@@ -150,6 +170,10 @@ def update_executor(
     timeout_seconds: int | None,
     pass_model_as_flag: bool,
     env: dict[str, str],
+    resume_args: list[str] | None = None,
+    continue_args: list[str] | None = None,
+    resume_in_project_root: bool = True,
+    session_ref_label: str | None = None,
 ) -> dict:
     executors = load_executor_library(root)
     cleaned_id = _clean_executor_id(executor_id)
@@ -168,6 +192,10 @@ def update_executor(
         executor["timeout_seconds"] = timeout_seconds if timeout_seconds and timeout_seconds > 0 else None
         executor["pass_model_as_flag"] = bool(pass_model_as_flag)
         executor["env"] = _clean_env(env)
+        executor["resume_args"] = [str(arg) for arg in (resume_args or [])]
+        executor["continue_args"] = [str(arg) for arg in (continue_args or [])]
+        executor["resume_in_project_root"] = bool(resume_in_project_root)
+        executor["session_ref_label"] = _clean_session_ref_label(session_ref_label)
         save_executor_library(root, executors)
         return get_executor(root, cleaned_id)
     raise ValueError(f"Executor not found: {current_executor_id}")
@@ -202,6 +230,46 @@ def build_executor_command(executor: dict, prompt: str, model: str | None) -> li
     }
     args = [str(arg).format(**substitutions) for arg in executor.get("args", [])]
     return [binary, *args]
+
+
+def executor_supports_session_resume(executor: dict) -> bool:
+    return bool(executor.get("resume_args") or executor.get("continue_args"))
+
+
+def build_executor_resume_command(
+    executor: dict,
+    project_root: Path,
+    session_ref: str | None = None,
+    latest: bool = False,
+) -> list[str]:
+    binary = str(executor.get("binary") or "").strip()
+    if not binary:
+        raise ValueError(f"Executor binary is not configured: {executor.get('id')}")
+    template_args = executor.get("continue_args") if latest else executor.get("resume_args")
+    if not template_args:
+        mode_label = "continue" if latest else "resume"
+        raise ValueError(f"Executor does not support {mode_label}: {executor.get('id')}")
+    if not latest and not str(session_ref or "").strip():
+        raise ValueError(f"Executor resume requires a session reference: {executor.get('id')}")
+    substitutions = {
+        "session_ref": str(session_ref or "").strip(),
+        "project_root": str(project_root),
+    }
+    args = [str(arg).format(**substitutions) for arg in template_args]
+    return [binary, *args]
+
+
+def resume_shell_preview(
+    executor: dict,
+    project_root: Path,
+    session_ref: str | None = None,
+    latest: bool = False,
+) -> str:
+    command = build_executor_resume_command(executor, project_root, session_ref=session_ref, latest=latest)
+    preview = shlex.join(command)
+    if executor.get("resume_in_project_root", True):
+        return f"cd {shlex.quote(str(project_root))} && {preview}"
+    return preview
 
 
 def _clean_executor_id(executor_id: str) -> str:
@@ -249,6 +317,10 @@ def normalize_executors(executors: list[dict]) -> list[dict]:
                 "timeout_seconds": executor.get("timeout_seconds") or None,
                 "pass_model_as_flag": bool(executor.get("pass_model_as_flag", False)),
                 "env": _clean_env(executor.get("env") or {}),
+                "resume_args": [str(arg) for arg in executor.get("resume_args", [])],
+                "continue_args": [str(arg) for arg in executor.get("continue_args", [])],
+                "resume_in_project_root": bool(executor.get("resume_in_project_root", True)),
+                "session_ref_label": _clean_session_ref_label(executor.get("session_ref_label")),
             }
         )
     _ensure_unique_ids(normalized)
@@ -262,3 +334,8 @@ def _ensure_unique_ids(executors: list[dict]) -> None:
         if executor["id"] in seen:
             raise ValueError(f"Duplicate executor ID: {executor['id']}")
         seen.add(executor["id"])
+
+
+def _clean_session_ref_label(value: object) -> str:
+    cleaned = str(value or "").strip()
+    return cleaned or "session"

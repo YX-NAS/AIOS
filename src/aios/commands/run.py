@@ -5,7 +5,9 @@ from pathlib import Path
 
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executions import (
+    attach_execution_session,
     auto_finish_execution,
+    build_execution_resume,
     finish_manual_execution,
     latest_execution_for_task,
     prepare_manual_execution,
@@ -16,8 +18,8 @@ from aios.core.executions import (
 
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("run", help="Manage semi-automatic task execution.")
-    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `approve` / `status` / `finish`.")
-    parser.add_argument("task_id", nargs="?", help="Task ID for status / finish mode.")
+    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `approve` / `status` / `finish` / `attach` / `resume`.")
+    parser.add_argument("task_id", nargs="?", help="Task ID for status / finish / attach / resume mode.")
     parser.add_argument("--manual", action="store_true", help="Prepare one manual execution.")
     parser.add_argument("--executor", default=None, help="Run one configured executor.")
     parser.add_argument("--model", default=None, help="Execution model. Defaults to the task recommendation.")
@@ -38,6 +40,10 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--allow-protected-push", action="store_true", help="Allow auto push on protected branches like main/master.")
     parser.add_argument("--auto-pr", action="store_true", help="Automatically create a draft PR after successful auto push.")
     parser.add_argument("--pr-base-branch", default="main", help="Base branch used for auto PR draft creation. Defaults to main.")
+    parser.add_argument("--session-id", default=None, help="External session id used for attach/resume.")
+    parser.add_argument("--session-name", default=None, help="External session name used for attach/resume.")
+    parser.add_argument("--session-note", default=None, help="Optional note recorded with one attached session.")
+    parser.add_argument("--latest-session", action="store_true", help="Use the executor's continue-latest command for resume.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
@@ -180,6 +186,38 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         _print_git_pr(result.get("git_pr"))
         return
 
+    if args.run_target == "attach":
+        if not args.task_id:
+            raise ValueError("Task ID is required for `aios run attach`.")
+        result = attach_execution_session(
+            root,
+            args.task_id,
+            executor_id=args.executor,
+            session_id=args.session_id,
+            session_name=args.session_name,
+            session_note=args.session_note,
+        )
+        print(f"Attached session for {result['task']['id']}: {result['task']['title']}")
+        print(f"Execution: {result['execution']['execution_id']}")
+        print(f"Executor: {result['executor']['id']}")
+        print(f"Session ref: {result['session_ref']}")
+        print(f"Resume command: {result['execution'].get('executor_resume_command') or '-'}")
+        if result['execution'].get("executor_continue_command"):
+            print(f"Continue latest: {result['execution']['executor_continue_command']}")
+        return
+
+    if args.run_target == "resume":
+        if not args.task_id:
+            raise ValueError("Task ID is required for `aios run resume`.")
+        result = build_execution_resume(root, args.task_id, latest=bool(args.latest_session))
+        print(f"Resume ready for {result['task']['id']}: {result['task']['title']}")
+        print(f"Execution: {result['execution']['execution_id']}")
+        print(f"Executor: {result['executor']['id']}")
+        print(f"Mode: {result['mode']}")
+        print(f"Session ref: {result.get('session_ref') or '-'}")
+        print(f"Command: {result['command']}")
+        return
+
     task_id = args.run_target
     if not task_id:
         raise ValueError("Task ID is required.")
@@ -234,7 +272,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         return
 
     if not args.manual:
-        raise ValueError("Use `aios run auto [--executor ...]`, `aios run approve TASK-ID --summary ...`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
+        raise ValueError("Use `aios run auto [--executor ...]`, `aios run approve TASK-ID --summary ...`, `aios run attach TASK-ID`, `aios run resume TASK-ID`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
 
     result = prepare_manual_execution(
         root,
@@ -272,6 +310,9 @@ def _print_execution(execution: dict) -> None:
     print(f"Command: {execution.get('executor_command') or '-'}")
     print(f"Exit code: {execution.get('executor_exit_code') if execution.get('executor_exit_code') is not None else '-'}")
     print(f"Log: {execution.get('executor_log_path') or '-'}")
+    print(f"Session ref: {execution.get('executor_session_id') or execution.get('executor_session_name') or '-'}")
+    print(f"Resume command: {execution.get('executor_resume_command') or '-'}")
+    print(f"Continue latest: {execution.get('executor_continue_command') or '-'}")
     print(f"Test command: {execution.get('test_command') or '-'}")
     print(f"Test result: {execution.get('test_result') or '-'}")
     print(f"Git clean before: {execution.get('git_is_clean_before')}")

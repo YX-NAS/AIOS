@@ -18,8 +18,15 @@ from aios.core.ccswitch import (
 from aios.core.context_builder import build_context_pack
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
-from aios.core.executions import execution_summary, finish_manual_execution, latest_execution_for_task, prepare_manual_execution
-from aios.core.executions import run_executor_with_auto_finish
+from aios.core.executions import (
+    attach_execution_session,
+    build_execution_resume,
+    execution_summary,
+    finish_manual_execution,
+    latest_execution_for_task,
+    prepare_manual_execution,
+    run_executor_with_auto_finish,
+)
 from aios.core.scoring import load_scores, model_score_summary
 from aios.core.handoff import build_handoff
 from aios.core.models import model_summary
@@ -312,6 +319,35 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "route": result["route"],
                             "handoff": result["handoff"],
                             "execution": result["execution"],
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/run/attach":
+                    result = attach_execution_session(
+                        self.project_root,
+                        payload["task_id"],
+                        executor_id=(payload.get("executor_id") or "").strip() or None,
+                        session_id=(payload.get("session_id") or "").strip() or None,
+                        session_name=(payload.get("session_name") or "").strip() or None,
+                        session_note=(payload.get("session_note") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Execution session attached.",
+                            **result,
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/run/resume":
+                    result = build_execution_resume(
+                        self.project_root,
+                        payload["task_id"],
+                        latest=bool(payload.get("latest")),
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Resume command generated.",
+                            **result,
                         },
                         status=HTTPStatus.CREATED,
                     )

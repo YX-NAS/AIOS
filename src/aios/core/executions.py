@@ -5,7 +5,13 @@ import re
 import subprocess
 from pathlib import Path
 
-from aios.core.executors import build_executor_command, get_executor, shell_preview
+from aios.core.executors import (
+    build_executor_command,
+    executor_supports_session_resume,
+    get_executor,
+    resume_shell_preview,
+    shell_preview,
+)
 from aios.core.git_commit import auto_commit_task_changes, git_snapshot
 from aios.core.git_pr import auto_create_pr_draft
 from aios.core.git_push import auto_push_commit
@@ -230,6 +236,102 @@ def run_executor_execution(
         "handoff": handoff,
         "execution": latest_execution_for_task(root, task_id),
         "executor": executor,
+    }
+
+
+def attach_execution_session(
+    root: Path,
+    task_id: str,
+    executor_id: str | None = None,
+    session_id: str | None = None,
+    session_name: str | None = None,
+    session_note: str | None = None,
+) -> dict:
+    execution = latest_open_execution_for_task(root, task_id) or latest_execution_for_task(root, task_id)
+    if not execution:
+        raise ValueError("No execution record found. Start one execution before attaching a session.")
+
+    resolved_executor_id = (executor_id or execution.get("executor_id") or "").strip()
+    if not resolved_executor_id:
+        raise ValueError("Executor ID is required to attach a session.")
+    executor = get_executor(None, resolved_executor_id)
+    if not executor_supports_session_resume(executor):
+        raise ValueError(f"Executor does not support session resume: {resolved_executor_id}")
+
+    resolved_session_id = str(session_id or "").strip() or None
+    resolved_session_name = str(session_name or "").strip() or None
+    if not resolved_session_id and not resolved_session_name:
+        raise ValueError("Use `session_id` or `session_name` to attach one session.")
+
+    session_ref = resolved_session_id or resolved_session_name
+    attached_at = now_iso()
+    updates = {
+        "executor_id": executor["id"],
+        "executor_label": executor.get("label"),
+        "executor_session_id": resolved_session_id,
+        "executor_session_name": resolved_session_name,
+        "executor_session_note": str(session_note or "").strip() or None,
+        "executor_session_attached_at": attached_at,
+        "executor_session_ref_label": executor.get("session_ref_label") or "session",
+        "executor_resume_supported": True,
+        "executor_resume_command": resume_shell_preview(executor, root, session_ref=session_ref, latest=False),
+        "executor_continue_command": resume_shell_preview(executor, root, latest=True) if executor.get("continue_args") else None,
+        "updated_at": attached_at,
+    }
+    updated_execution = update_execution(root, execution["execution_id"], updates)
+    return {
+        "task": get_task(root, task_id),
+        "execution": updated_execution,
+        "executor": executor,
+        "session_ref": session_ref,
+    }
+
+
+def build_execution_resume(
+    root: Path,
+    task_id: str,
+    latest: bool = False,
+) -> dict:
+    execution = latest_open_execution_for_task(root, task_id) or latest_execution_for_task(root, task_id)
+    if not execution:
+        raise ValueError("No execution record found for this task.")
+    executor_id = str(execution.get("executor_id") or "").strip()
+    if not executor_id:
+        raise ValueError("This execution has no executor attached yet.")
+    executor = get_executor(None, executor_id)
+    if not executor_supports_session_resume(executor):
+        raise ValueError(f"Executor does not support session resume: {executor_id}")
+
+    session_ref = str(execution.get("executor_session_id") or execution.get("executor_session_name") or "").strip() or None
+    mode = "latest"
+    if not latest and session_ref:
+        mode = "attached"
+        command = resume_shell_preview(executor, root, session_ref=session_ref, latest=False)
+    else:
+        if not executor.get("continue_args"):
+            label = executor.get("session_ref_label") or "session"
+            raise ValueError(f"No attached {label} is available, and this executor does not support continue-latest.")
+        command = resume_shell_preview(executor, root, latest=True)
+
+    generated_at = now_iso()
+    updated_execution = update_execution(
+        root,
+        execution["execution_id"],
+        {
+            "executor_resume_supported": True,
+            "executor_resume_last_command": command,
+            "executor_resume_last_mode": mode,
+            "executor_resume_generated_at": generated_at,
+            "updated_at": generated_at,
+        },
+    )
+    return {
+        "task": get_task(root, task_id),
+        "execution": updated_execution,
+        "executor": executor,
+        "mode": mode,
+        "session_ref": session_ref,
+        "command": command,
     }
 
 
@@ -561,6 +663,10 @@ def prepare_execution_record(
             item["operator_note"] = note
             item["executor_id"] = executor.get("id") if executor else None
             item["executor_label"] = executor.get("label") if executor else None
+            item["executor_resume_supported"] = executor_supports_session_resume(executor) if executor else False
+            item["executor_continue_command"] = (
+                resume_shell_preview(executor, root, latest=True) if executor and executor.get("continue_args") else None
+            )
             item["git_is_repo_before"] = git_state["is_git_repo"]
             item["git_branch_before"] = git_state["branch"]
             item["git_commit_before"] = git_state["commit"]
@@ -596,6 +702,17 @@ def prepare_execution_record(
         "executor_log_path": None,
         "executor_stdout_excerpt": None,
         "executor_stderr_excerpt": None,
+        "executor_resume_supported": executor_supports_session_resume(executor) if executor else False,
+        "executor_session_id": None,
+        "executor_session_name": None,
+        "executor_session_note": None,
+        "executor_session_attached_at": None,
+        "executor_session_ref_label": executor.get("session_ref_label") if executor else None,
+        "executor_resume_command": None,
+        "executor_continue_command": resume_shell_preview(executor, root, latest=True) if executor and executor.get("continue_args") else None,
+        "executor_resume_last_command": None,
+        "executor_resume_last_mode": None,
+        "executor_resume_generated_at": None,
         "git_is_repo_before": git_state["is_git_repo"],
         "git_branch_before": git_state["branch"],
         "git_commit_before": git_state["commit"],

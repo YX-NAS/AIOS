@@ -62,6 +62,10 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
             timeout_seconds=args.timeout,
             pass_model_as_flag=args.pass_model_as_flag,
             env=env,
+            resume_args=args.resume_arg or [],
+            continue_args=args.continue_arg or [],
+            resume_in_project_root=not args.no_resume_project_root,
+            session_ref_label=args.session_ref_label,
         )
         print(f"Created executor: {executor['id']}")
         return
@@ -81,6 +85,10 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
             timeout_seconds=args.timeout,
             pass_model_as_flag=args.pass_model_as_flag,
             env=env,
+            resume_args=args.resume_arg or [],
+            continue_args=args.continue_arg or [],
+            resume_in_project_root=not args.no_resume_project_root,
+            session_ref_label=args.session_ref_label,
         )
         print(f"Updated executor: {executor['id']}")
         return
@@ -110,6 +118,10 @@ def _add_mutation_arguments(parser: argparse.ArgumentParser, create_mode: bool) 
     parser.add_argument("--timeout", type=int, default=None, help="Optional timeout in seconds.")
     parser.add_argument("--pass-model-as-flag", action="store_true")
     parser.add_argument("--env", action="append", default=[], help="Repeatable KEY=VALUE pair.")
+    parser.add_argument("--resume-arg", action="append", default=[], help="Repeatable resume command argument template.")
+    parser.add_argument("--continue-arg", action="append", default=[], help="Repeatable continue-latest command argument template.")
+    parser.add_argument("--no-resume-project-root", action="store_true", help="Do not wrap resume commands with project root cd.")
+    parser.add_argument("--session-ref-label", default=None, help="Human label for attached session reference.")
 
 
 def _parse_env_pairs(pairs: list[str]) -> dict[str, str]:

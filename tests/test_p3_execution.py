@@ -183,6 +183,17 @@ def test_loading_executions_without_file_returns_empty_after_init(tmp_path: Path
     assert load_executions(tmp_path) == []
 
 
+def test_executor_library_defaults_include_resume_templates() -> None:
+    assert main(["executor", "reset"]) == 0
+    executors = load_executor_library()
+    codex = next(item for item in executors if item["id"] == "codex-cli")
+    claude = next(item for item in executors if item["id"] == "claude-code-cli")
+    assert codex["resume_args"] == ["resume", "{session_ref}"]
+    assert codex["continue_args"] == ["resume", "--last"]
+    assert claude["resume_args"] == ["--resume", "{session_ref}"]
+    assert claude["continue_args"] == ["--continue"]
+
+
 def test_ccswitch_export_cli_writes_auditable_json(tmp_path: Path) -> None:
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
@@ -201,6 +212,44 @@ def test_ccswitch_export_cli_writes_auditable_json(tmp_path: Path) -> None:
     assert payload["execution_id"] == execution["execution_id"]
     assert payload["planned_model"] == task["recommended_model"]
     assert payload["export_model"] == "claude"
+
+
+def test_run_attach_and_resume_cli_builds_session_commands(tmp_path: Path, capsys) -> None:
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            "attach",
+            task["id"],
+            "--executor",
+            "codex-cli",
+            "--session-id",
+            "session-123",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["executor_id"] == "codex-cli"
+    assert execution["executor_session_id"] == "session-123"
+    assert "codex resume session-123" in execution["executor_resume_command"]
+    assert "codex resume --last" in execution["executor_continue_command"]
+
+    assert main(["--root", str(tmp_path), "run", "resume", task["id"]]) == 0
+    output = capsys.readouterr().out
+    assert "Mode: attached" in output
+    assert "codex resume session-123" in output
+
+    assert main(["--root", str(tmp_path), "run", "resume", task["id"], "--latest-session"]) == 0
+    output = capsys.readouterr().out
+    assert "Mode: latest" in output
+    assert "codex resume --last" in output
 
 
 def test_ccswitch_export_cli_stdout_outputs_json(tmp_path: Path, capsys) -> None:
@@ -389,6 +438,47 @@ def test_ccswitch_provider_and_session_api_return_auditable_payloads(tmp_path: P
         assert session_payload["handoff"]["provider_config"]["endpoint"] == "https://api.openai.com/v1"
         assert (tmp_path / session_payload["handoff_path"]).exists()
         assert session_payload["execution"]["ccswitch_session_app"] == "codex"
+    finally:
+        handle.close()
+
+
+def test_run_attach_and_resume_api_returns_session_commands(tmp_path: Path) -> None:
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(handle.url, "/api/run/manual", method="POST", payload={"task_id": task["id"], "start": True})
+
+        status_code, attach_payload = request_json(
+            handle.url,
+            "/api/run/attach",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "codex-cli", "session_id": "session-abc"},
+        )
+        assert status_code == 201
+        assert attach_payload["execution"]["executor_session_id"] == "session-abc"
+        assert "codex resume session-abc" in attach_payload["execution"]["executor_resume_command"]
+
+        status_code, resume_payload = request_json(
+            handle.url,
+            "/api/run/resume",
+            method="POST",
+            payload={"task_id": task["id"]},
+        )
+        assert status_code == 201
+        assert resume_payload["mode"] == "attached"
+        assert "codex resume session-abc" in resume_payload["command"]
+
+        status_code, latest_payload = request_json(
+            handle.url,
+            "/api/run/resume",
+            method="POST",
+            payload={"task_id": task["id"], "latest": True},
+        )
+        assert status_code == 201
+        assert latest_payload["mode"] == "latest"
+        assert "codex resume --last" in latest_payload["command"]
     finally:
         handle.close()
 

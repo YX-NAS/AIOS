@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-14`，核心功能包括：
+当前版本已交付到 `P3-16` 的执行会话恢复入口，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -23,6 +23,7 @@
 - `P3-11` 外部模型切换接管已落地首版 Deep Link 导入能力
 - `P3-12` 自动 Push 已落地首版特性分支远端交付能力
 - `P3-14` 自动 PR 草案已落地首版 Draft PR 创建能力
+- `P3-16` 执行会话恢复入口已落地首版 attach / resume / continue-latest 能力
 
 已知短板：
 
@@ -31,6 +32,7 @@
 - 任务拆解仍偏平面，缺少草案确认和依赖表达
 - Context Pack 还缺分层与质量校验
 - 自动化还没有接管 `ccswitch` 和真实会话切换
+- 还不会自动识别或提取真实 session id
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
 - 只支持本地自动 commit，还没有自动 push / PR
 - 当前只接通 `ccswitch` prompt Deep Link，provider / session 级接管仍处于数据层补齐阶段
@@ -91,6 +93,7 @@
 | P3-13 | Provider / Session 接管 | 补 provider deep link、Session Handoff 和恢复继续执行策略 |
 | P3-14 | 自动 PR 草案 | `run ... --auto-pr` 支持在 push 成功后生成 Draft PR |
 | P3-15 | PR 元数据增强 | reviewer / label / 交付模板增强 |
+| P3-16 | 执行会话恢复入口 | 执行器支持任务级 session attach / resume / continue-latest |
 
 ### P4 — 平台化
 
@@ -107,8 +110,8 @@
 
 1. P3-9：补齐成本与执行统计
 2. P3-13：补 provider / session handoff 数据层
-3. P3-15：设计 PR 元数据增强边界
-4. P3-4：补齐任务树可视化和更细粒度编辑
+3. P3-16：补执行器会话恢复入口
+4. P3-15：设计 PR 元数据增强边界
 5. P0-2：持续同步操作手册与规划文档
 
 ## 下一阶段实施目标
@@ -139,5 +142,6 @@
 | 2026-07-02 | 自动 Git 提交只在执行开始前非 `.aios/` 工作区干净时生效 | 避免把用户已有脏改动误一起提交，同时不让 `.aios/` 元数据阻塞自动化 |
 | 2026-07-02 | `ccswitch` 先接官方 Deep Link 的 prompt 导入，不直接假设稳定 CLI | 先用已公开且可验证的入口缩短人工切换路径，再逐步扩大自动化范围 |
 | 2026-07-02 | Provider / Session 先做全局模型库元数据、provider deeplink 和 session handoff，不直接做桌面静默恢复 | 当前缺的是稳定交接数据，不是更多脆弱自动点击 |
+| 2026-07-02 | 执行器会话恢复先做 attach / resume / continue-latest，不直接做 session 自动探测 | 先把恢复入口和审计链固定住，再逐步尝试自动恢复 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |

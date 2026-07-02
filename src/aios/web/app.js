@@ -54,6 +54,9 @@ const elements = {
   copyCcswitchButton: document.getElementById("copyCcswitchButton"),
   copyCurrentPackButton: document.getElementById("copyCurrentPackButton"),
   copyHandoffButton: document.getElementById("copyHandoffButton"),
+  sessionAttachForm: document.getElementById("sessionAttachForm"),
+  copyResumeCommandButton: document.getElementById("copyResumeCommandButton"),
+  copyContinueLatestCommandButton: document.getElementById("copyContinueLatestCommandButton"),
   initForm: document.getElementById("initForm"),
   goalPlanForm: document.getElementById("goalPlanForm"),
   taskForm: document.getElementById("taskForm"),
@@ -335,6 +338,12 @@ async function loadTaskInspector() {
   `;
   renderExecution(task, execution);
   renderScheduler(task);
+  if (elements.sessionAttachForm) {
+    const executorInput = elements.sessionAttachForm.querySelector('input[name="executor_id"]');
+    if (executorInput && execution?.executor_id) {
+      executorInput.value = execution.executor_id;
+    }
+  }
 
   const hasPack = state.packs.some((pack) => pack.task_id === task.id);
   elements.copyCurrentPackButton.classList.toggle("hidden", !hasPack);
@@ -352,6 +361,7 @@ function renderExecution(task, execution) {
     <strong>${execution.execution_id} | ${execution.status}</strong>
     <div class="muted">计划模型：${execution.planned_model || task.recommended_model}</div>
     <div class="muted">实际模型：${execution.actual_model || "-"}</div>
+    <div class="muted">执行器：${execution.executor_id || "-"}</div>
     <div class="muted">自动提交：${execution.auto_commit_status || "-"}</div>
     <div class="muted">自动 Push：${execution.auto_push_status || "-"}</div>
     <div class="muted">Draft PR：${execution.auto_pr_status || "-"}</div>
@@ -364,6 +374,9 @@ function renderExecution(task, execution) {
     <div class="muted">ccswitch 导出：${execution.ccswitch_export_path || "-"}</div>
     <div class="muted">ccswitch Deep Link：${execution.ccswitch_deeplink ? "已生成" : "-"}</div>
     <div class="muted">Session Handoff：${execution.ccswitch_session_handoff_path || "-"}</div>
+    <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>
+    <div class="muted">恢复命令：${execution.executor_resume_command || execution.executor_resume_last_command || "-"}</div>
+    <div class="muted">继续最近会话：${execution.executor_continue_command || "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
@@ -711,6 +724,63 @@ elements.copyCcswitchSessionHandoffButton.addEventListener("click", async () => 
     await refreshDashboard();
     setActivity(`已复制 Session Handoff。\n文件：${data.handoff_path}\n模型：${data.handoff.model}`);
   }, "复制 Session Handoff 失败。");
+});
+
+elements.sessionAttachForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  const formElement = event.currentTarget;
+  await runAction(async () => {
+    const form = new FormData(formElement);
+    const payload = {
+      task_id: state.selectedTaskId,
+      executor_id: String(form.get("executor_id") || "").trim(),
+      session_id: String(form.get("session_id") || "").trim(),
+      session_name: String(form.get("session_name") || "").trim(),
+      session_note: String(form.get("session_note") || "").trim(),
+    };
+    const data = await api("/api/run/attach", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    await refreshDashboard();
+    setActivity(`已挂接会话。\n执行器：${data.executor.id}\n会话：${data.session_ref}\n恢复命令：${data.execution.executor_resume_command || "-"}`);
+  }, "挂接当前会话失败。");
+});
+
+elements.copyResumeCommandButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/run/resume", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, latest: false }),
+    });
+    await copyText(data.command);
+    await refreshDashboard();
+    setActivity(`已复制恢复命令。\n模式：${data.mode}\n执行器：${data.executor.id}\n命令：${data.command}`);
+  }, "复制恢复命令失败。");
+});
+
+elements.copyContinueLatestCommandButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/run/resume", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, latest: true }),
+    });
+    await copyText(data.command);
+    await refreshDashboard();
+    setActivity(`已复制最近会话继续命令。\n执行器：${data.executor.id}\n命令：${data.command}`);
+  }, "复制最近会话继续命令失败。");
 });
 
 elements.copyCcswitchButton.addEventListener("click", async () => {
