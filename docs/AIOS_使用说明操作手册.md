@@ -592,6 +592,9 @@ aios --root /path/to/project ccswitch confirm TASK-20260701-001 --status confirm
 
 这样可以避免系统在模型或会话切换结果未确认时继续自动执行。
 
+此外，bridge 在真正拉起终端恢复命令前，会自动写一个本地 signal 文件。  
+这能让 AIOS 自动看到“终端恢复已启动”，即使你还没有手动确认 bridge 最终结果。
+
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 
 推荐顺序：

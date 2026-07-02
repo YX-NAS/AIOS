@@ -24,6 +24,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 桥接结果可观测层方案见 [docs/P3_20_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_20_DESIGN.md)。
 bridge 确认闭环方案见 [docs/P3_21_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_21_DESIGN.md)。
 bridge 确认安全门方案见 [docs/P3_22_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_22_DESIGN.md)。
+bridge 恢复信号方案见 [docs/P3_23_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_23_DESIGN.md)。
 
 ## MVP 边界
 
@@ -68,6 +69,7 @@ bridge 确认安全门方案见 [docs/P3_22_DESIGN.md](/Users/yaxun/SynologyDriv
 - bridge 现在会记录每一步的状态、失败步骤和错误信息，便于后续重试和自动化确认
 - bridge 现在还支持显式确认结果，把外部切换收口成 `confirmed_ready` 或 `confirmed_failed`
 - 自动派发现在会尊重 bridge 确认状态；未确认前不会继续推进任务
+- bridge 终端恢复步骤现在会自动写本地 signal 文件，给外部切换增加一条自动证据
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 

@@ -386,6 +386,8 @@ function renderExecution(task, execution) {
     <div class="muted">Bridge 确认：${execution.ccswitch_bridge_confirmation_status || "-"}</div>
     <div class="muted">Bridge 确认时间：${execution.ccswitch_bridge_confirmed_at || "-"}</div>
     <div class="muted">Bridge 确认备注：${execution.ccswitch_bridge_confirmation_note || "-"}</div>
+    <div class="muted">Bridge 恢复信号：${execution.ccswitch_bridge_resume_signal_status || "-"}</div>
+    <div class="muted">Bridge 恢复时间：${execution.ccswitch_bridge_resume_started_at || "-"}</div>
     <div class="muted">Bridge 最后步骤：${execution.ccswitch_bridge_last_step || "-"}</div>
     <div class="muted">Bridge 错误：${execution.ccswitch_bridge_error || "-"}</div>
     <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>

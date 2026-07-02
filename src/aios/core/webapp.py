@@ -16,6 +16,7 @@ from aios.core.ccswitch import (
     confirm_ccswitch_bridge,
     export_ccswitch_payload,
     export_ccswitch_session_handoff,
+    with_bridge_runtime_signal,
 )
 from aios.core.context_builder import build_context_pack
 from aios.core.dispatch import auto_progress_next_step
@@ -94,12 +95,12 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(
                         {
                             "task": get_task(self.project_root, task_id),
-                            "execution": latest_execution_for_task(self.project_root, task_id),
+                            "execution": with_bridge_runtime_signal(self.project_root, latest_execution_for_task(self.project_root, task_id)),
                         }
                     )
                 if parsed.path.startswith("/api/run/task/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
-                    return self._send_json({"execution": latest_execution_for_task(self.project_root, task_id)})
+                    return self._send_json({"execution": with_bridge_runtime_signal(self.project_root, latest_execution_for_task(self.project_root, task_id))})
                 if parsed.path.startswith("/api/route/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     route = route_task(get_task(self.project_root, task_id), self.project_root)

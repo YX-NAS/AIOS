@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -247,6 +248,7 @@ def build_ccswitch_bridge(
         "provider_deeplink": session_handoff["handoff"]["provider_deeplink"],
         "prompt_deeplink": session_handoff["handoff"]["prompt_deeplink"],
         "resume_command": resume_payload["command"],
+        "resume_signal_path": str(_bridge_signal_path(root, task["id"], execution["execution_id"], export_model).relative_to(root)),
         "session_ref": resume_payload.get("session_ref"),
         "session_handoff_path": session_handoff["handoff_path"],
         "steps": [
@@ -527,6 +529,10 @@ def _record_bridge(
         item["ccswitch_bridge_confirmation_status"] = "pending_confirmation" if opened_at or status == "failed" else "not_requested"
         item["ccswitch_bridge_confirmation_note"] = None
         item["ccswitch_bridge_confirmed_at"] = None
+        item["ccswitch_bridge_resume_signal_path"] = str(_bridge_signal_path(root, item["task_id"], execution_id, item.get("ccswitch_session_model") or item.get("planned_model") or "unknown").relative_to(root))
+        signal = load_bridge_resume_signal(root, item)
+        item["ccswitch_bridge_resume_signal_status"] = "started" if signal else "pending"
+        item["ccswitch_bridge_resume_started_at"] = signal.get("started_at") if signal else None
         item["ccswitch_bridge_last_step"] = last_step
         item["ccswitch_bridge_error"] = error
         item["ccswitch_bridge_started_at"] = started_at
@@ -573,7 +579,7 @@ def _open_ccswitch_bridge(payload: dict) -> dict:
         _run_bridge_step(
             bridge,
             4,
-            lambda: launch_command_in_terminal(bridge["resume_command"], app=str(bridge.get("terminal_app") or "Terminal")),
+            lambda: launch_command_in_terminal(_wrap_resume_command_with_signal(bridge), app=str(bridge.get("terminal_app") or "Terminal")),
         )
     except Exception as exc:
         bridge["bridge_status"] = "failed"
@@ -611,6 +617,60 @@ def _run_bridge_step(bridge: dict, index: int, action) -> None:
         raise
     step["status"] = "completed"
     step["finished_at"] = now_iso()
+
+
+def _bridge_signal_path(root: Path, task_id: str, execution_id: str, model: str) -> Path:
+    export_dir = require_aios(root) / "ccswitch"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    return export_dir / f"{task_id}-{execution_id}-{safe_model_name(model)}-resume-signal.json"
+
+
+def _wrap_resume_command_with_signal(bridge: dict) -> str:
+    root = Path(bridge["project_root"])
+    signal_path = root / bridge["resume_signal_path"]
+    signal_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(
+        {
+            "task_id": bridge["task_id"],
+            "execution_id": bridge["execution_id"],
+            "model": bridge["model"],
+            "bridge_mode": bridge["bridge_mode"],
+            "started_at": now_iso(),
+        },
+        ensure_ascii=False,
+    )
+    write_signal = (
+        f"cd {shlex.quote(str(root))} && "
+        f"mkdir -p {shlex.quote(str(signal_path.parent.relative_to(root)))} && "
+        f"cat <<'EOF' > {shlex.quote(str(signal_path.relative_to(root)))}\n{payload}\nEOF\n"
+        f"sh -lc {shlex.quote(bridge['resume_command'])}"
+    )
+    return write_signal
+
+
+def load_bridge_resume_signal(root: Path, execution: dict) -> dict | None:
+    signal_path_value = str(execution.get("ccswitch_bridge_resume_signal_path") or "").strip()
+    if not signal_path_value:
+        return None
+    signal_path = root / signal_path_value
+    if not signal_path.exists():
+        return None
+    try:
+        return json.loads(signal_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def with_bridge_runtime_signal(root: Path, execution: dict | None) -> dict | None:
+    if not execution:
+        return None
+    signal = load_bridge_resume_signal(root, execution)
+    if not signal:
+        return execution
+    enriched = dict(execution)
+    enriched["ccswitch_bridge_resume_signal_status"] = "started"
+    enriched["ccswitch_bridge_resume_started_at"] = signal.get("started_at")
+    return enriched
 
 
 def _resolve_task_execution(root: Path, task_id: str, app: str, model: str | None) -> tuple[dict, dict, str, str]:
