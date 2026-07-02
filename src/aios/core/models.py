@@ -39,6 +39,10 @@ def default_model_library() -> list[dict]:
                 "rank": index + 1,
                 "task_types": sorted(model_tasks[model]),
                 "context_window": DEFAULT_CONTEXT_WINDOWS.get(model),
+                "endpoint": None,
+                "homepage": None,
+                "notes": None,
+                "config_url": None,
             }
         )
     return models
@@ -98,6 +102,10 @@ def normalize_models(models: list[dict]) -> list[dict]:
                 "rank": max(1, int(model.get("rank", index + 1))),
                 "task_types": sorted(dict.fromkeys(cleaned_task_types)),
                 "context_window": model.get("context_window") or DEFAULT_CONTEXT_WINDOWS.get(model_id),
+                "endpoint": _clean_optional_text(model.get("endpoint")),
+                "homepage": _clean_optional_text(model.get("homepage")),
+                "notes": _clean_optional_text(model.get("notes")),
+                "config_url": _clean_optional_text(model.get("config_url")),
             }
         )
     _ensure_unique_ids(normalized)
@@ -113,6 +121,10 @@ def create_model(
     enabled: bool = True,
     rank: int = 1,
     task_types: list[str] | None = None,
+    endpoint: str | None = None,
+    homepage: str | None = None,
+    notes: str | None = None,
+    config_url: str | None = None,
 ) -> dict:
     models = load_model_library(root)
     model_id = _clean_model_id(model_id)
@@ -126,6 +138,10 @@ def create_model(
         "rank": max(1, rank),
         "task_types": _clean_task_types(task_types or []),
         "context_window": DEFAULT_CONTEXT_WINDOWS.get(model_id),
+        "endpoint": _clean_optional_text(endpoint),
+        "homepage": _clean_optional_text(homepage),
+        "notes": _clean_optional_text(notes),
+        "config_url": _clean_optional_text(config_url),
     }
     models.append(model)
     save_model_library(root, models)
@@ -141,6 +157,10 @@ def update_model(
     enabled: bool,
     rank: int,
     task_types: list[str],
+    endpoint: str | None = None,
+    homepage: str | None = None,
+    notes: str | None = None,
+    config_url: str | None = None,
 ) -> dict:
     models = load_model_library(root)
     target_id = _clean_model_id(model_id)
@@ -155,6 +175,10 @@ def update_model(
             model["rank"] = max(1, rank)
             model["task_types"] = _clean_task_types(task_types)
             model["context_window"] = model.get("context_window") or DEFAULT_CONTEXT_WINDOWS.get(target_id)
+            model["endpoint"] = _clean_optional_text(endpoint)
+            model["homepage"] = _clean_optional_text(homepage)
+            model["notes"] = _clean_optional_text(notes)
+            model["config_url"] = _clean_optional_text(config_url)
             save_model_library(root, models)
             return next(item for item in load_model_library(root) if item["id"] == target_id)
     raise ValueError(f"Model not found: {current_model_id}")
@@ -178,6 +202,16 @@ def model_summary(root: Path | None = None) -> dict:
     }
 
 
+def get_model(root: Path | None, model_id: str) -> dict | None:
+    target = str(model_id or "").strip()
+    if not target:
+        return None
+    for model in load_model_library(root):
+        if model["id"] == target:
+            return model
+    return None
+
+
 def _clean_model_id(model_id: str) -> str:
     cleaned = str(model_id).strip()
     if not cleaned:
@@ -187,6 +221,11 @@ def _clean_model_id(model_id: str) -> str:
 
 def _clean_task_types(task_types: list[str]) -> list[str]:
     return sorted(dict.fromkeys(task_type for task_type in task_types if task_type in TASK_TYPES))
+
+
+def _clean_optional_text(value: object) -> str | None:
+    cleaned = str(value or "").strip()
+    return cleaned or None
 
 
 def _ensure_unique_ids(models: list[dict]) -> None:

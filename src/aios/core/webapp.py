@@ -9,7 +9,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from aios.core.ccswitch import build_ccswitch_deeplink, export_ccswitch_payload
+from aios.core.ccswitch import (
+    build_ccswitch_deeplink,
+    build_ccswitch_provider_deeplink,
+    export_ccswitch_payload,
+    export_ccswitch_session_handoff,
+)
 from aios.core.context_builder import build_context_pack
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
@@ -103,6 +108,12 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 if parsed.path == "/api/handoffs":
                     return self._send_json({"handoffs": list_handoffs(self.project_root)})
                 if parsed.path == "/api/ccswitch/export":
+                    self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+                    return
+                if parsed.path == "/api/ccswitch/provider-deeplink":
+                    self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+                    return
+                if parsed.path == "/api/ccswitch/session-handoff":
                     self._send_error(HTTPStatus.NOT_FOUND, "Not found")
                     return
                 if parsed.path.startswith("/api/packs/by-task/"):
@@ -252,6 +263,35 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(
                         {
                             "message": "ccswitch deeplink generated.",
+                            **result,
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/ccswitch/provider-deeplink":
+                    result = build_ccswitch_provider_deeplink(
+                        self.project_root,
+                        payload["task_id"],
+                        app=(payload.get("app") or "codex").strip() or "codex",
+                        model=(payload.get("model") or "").strip() or None,
+                        open_link=bool(payload.get("open")),
+                    )
+                    return self._send_json(
+                        {
+                            "message": "ccswitch provider deeplink generated.",
+                            **result,
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/ccswitch/session-handoff":
+                    result = export_ccswitch_session_handoff(
+                        self.project_root,
+                        payload["task_id"],
+                        app=(payload.get("app") or "codex").strip() or "codex",
+                        model=(payload.get("model") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "ccswitch session handoff exported.",
                             **result,
                         },
                         status=HTTPStatus.CREATED,

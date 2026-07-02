@@ -202,6 +202,9 @@ function renderModels() {
           <td><input name="modelId" value="${model.id}" required /></td>
           <td><input name="label" value="${model.label}" /></td>
           <td><input name="provider" value="${model.provider}" placeholder="例如：openai" /></td>
+          <td><input name="endpoint" value="${model.endpoint || ""}" placeholder="https://api.example.com/v1" /></td>
+          <td><input name="configUrl" value="${model.config_url || ""}" placeholder="https://..." /></td>
+          <td><input name="notes" value="${model.notes || ""}" placeholder="路由或登录说明" /></td>
           <td class="td-task-types"><div class="task-type-checkboxes" data-task-types="${model.task_types.join(",")}"></div></td>
           <td><input name="rank" type="number" min="1" value="${model.rank}" class="rank-input" /></td>
           <td class="td-checkbox"><label class="model-toggle"><input type="checkbox" name="enabled" ${model.enabled ? "checked" : ""} /><span></span></label></td>
@@ -235,6 +238,9 @@ function renderModels() {
           model_id: String(row.querySelector('input[name="modelId"]').value || "").trim(),
           label: String(row.querySelector('input[name="label"]').value || "").trim(),
           provider: String(row.querySelector('input[name="provider"]').value || "").trim(),
+          endpoint: String(row.querySelector('input[name="endpoint"]').value || "").trim(),
+          config_url: String(row.querySelector('input[name="configUrl"]').value || "").trim(),
+          notes: String(row.querySelector('input[name="notes"]').value || "").trim(),
           enabled: enabledCheckbox.checked,
           rank: Number(row.querySelector('input[name="rank"]').value || 1),
           task_types: (() => {
@@ -336,6 +342,9 @@ elements.modelCreateForm.addEventListener("submit", async (event) => {
       model_id: String(form.get("model_id") || "").trim(),
       label: String(form.get("label") || "").trim(),
       provider: String(form.get("provider") || "").trim(),
+      endpoint: String(form.get("endpoint") || "").trim(),
+      config_url: String(form.get("config_url") || "").trim(),
+      notes: String(form.get("notes") || "").trim(),
       enabled: form.get("enabled") === "on",
       rank: Number(form.get("rank") || 1),
       task_types: getSelectedTaskTypes(formElement.querySelector('select[name="taskTypes"]')),

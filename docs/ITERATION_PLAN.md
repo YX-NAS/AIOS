@@ -33,7 +33,7 @@
 - 自动化还没有接管 `ccswitch` 和真实会话切换
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
 - 只支持本地自动 commit，还没有自动 push / PR
-- 当前只接通 `ccswitch` prompt Deep Link，还没有 provider / session 级自动切换
+- 当前只接通 `ccswitch` prompt Deep Link，provider / session 级接管仍处于数据层补齐阶段
 - 还没有自动创建 PR，远端交付还停在分支 push
 - Draft PR 已支持，但还没有 reviewer / label / merge 策略
 
@@ -88,7 +88,7 @@
 | P3-10 | 自动 Git 提交 | `run finish --auto-commit` / `run auto --auto-commit` 支持受控本地提交 |
 | P3-11 | 外部模型切换接管 | `ccswitch deeplink` / `/api/ccswitch/deeplink` 支持导入 handoff prompt |
 | P3-12 | 自动 Push / 远程交付 | `run ... --auto-push` 支持特性分支自动 push |
-| P3-13 | Provider / Session 接管 | 补 provider deep link、会话恢复与继续执行策略 |
+| P3-13 | Provider / Session 接管 | 补 provider deep link、Session Handoff 和恢复继续执行策略 |
 | P3-14 | 自动 PR 草案 | `run ... --auto-pr` 支持在 push 成功后生成 Draft PR |
 | P3-15 | PR 元数据增强 | reviewer / label / 交付模板增强 |
 
@@ -106,7 +106,7 @@
 ## 近期重点（接下来 2 周）
 
 1. P3-9：补齐成本与执行统计
-2. P3-13：补 provider / session 接管策略
+2. P3-13：补 provider / session handoff 数据层
 3. P3-15：设计 PR 元数据增强边界
 4. P3-4：补齐任务树可视化和更细粒度编辑
 5. P0-2：持续同步操作手册与规划文档
@@ -138,5 +138,6 @@
 | 2026-07-02 | 自动收口要求显式 `summary`，验证失败时保持 `review_pending` | 先保证收口可控、可审计，避免误把失败任务标记为完成 |
 | 2026-07-02 | 自动 Git 提交只在执行开始前非 `.aios/` 工作区干净时生效 | 避免把用户已有脏改动误一起提交，同时不让 `.aios/` 元数据阻塞自动化 |
 | 2026-07-02 | `ccswitch` 先接官方 Deep Link 的 prompt 导入，不直接假设稳定 CLI | 先用已公开且可验证的入口缩短人工切换路径，再逐步扩大自动化范围 |
+| 2026-07-02 | Provider / Session 先做全局模型库元数据、provider deeplink 和 session handoff，不直接做桌面静默恢复 | 当前缺的是稳定交接数据，不是更多脆弱自动点击 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |

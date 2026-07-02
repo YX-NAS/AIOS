@@ -8,6 +8,7 @@ from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import latest_execution_for_task, load_executions
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.launcher import start_launcher_server
+from aios.core.models import create_model
 from aios.core.webapp import start_web_server
 from aios.main import main
 
@@ -272,6 +273,122 @@ def test_ccswitch_deeplink_api_returns_prompt_link(tmp_path: Path) -> None:
         assert payload["app"] == "codex"
         assert payload["deeplink"].startswith("ccswitch://v1/import?")
         assert payload["execution"]["ccswitch_deeplink_app"] == "codex"
+    finally:
+        handle.close()
+
+
+def test_ccswitch_provider_deeplink_cli_uses_global_model_metadata(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        "https://example.com/openai-config.json",
+    )
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--model", "gpt-5.5-coder", "--start"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "provider", task["id"], "--app", "codex", "--stdout"]) == 0
+    output = capsys.readouterr().out
+    assert "resource=provider" in output
+    assert "https%3A%2F%2Fapi.openai.com%2Fv1" in output
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["ccswitch_provider_name"] == "openai"
+    assert execution["ccswitch_provider_model"] == "gpt-5.5-coder"
+
+
+def test_ccswitch_session_handoff_cli_exports_json_bundle(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--model", "gpt-5.5-coder", "--start"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "session", task["id"]]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    handoff_path = tmp_path / execution["ccswitch_session_handoff_path"]
+    assert handoff_path.exists()
+    payload = json.loads(handoff_path.read_text(encoding="utf-8"))
+    assert payload["provider"] == "openai"
+    assert payload["model"] == "gpt-5.5-coder"
+    assert payload["provider_deeplink"].startswith("ccswitch://v1/import?")
+    assert payload["prompt_deeplink"].startswith("ccswitch://v1/import?")
+    assert task["id"] in payload["session_search_keywords"]
+
+
+def test_ccswitch_provider_and_session_api_return_auditable_payloads(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        "https://example.com/openai-config.json",
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(
+            handle.url,
+            "/api/run/manual",
+            method="POST",
+            payload={"task_id": task["id"], "model": "gpt-5.5-coder", "start": True},
+        )
+
+        status_code, provider_payload = request_json(
+            handle.url,
+            "/api/ccswitch/provider-deeplink",
+            method="POST",
+            payload={"task_id": task["id"], "app": "codex"},
+        )
+        assert status_code == 201
+        assert provider_payload["provider"] == "openai"
+        assert provider_payload["deeplink"].startswith("ccswitch://v1/import?")
+
+        status_code, session_payload = request_json(
+            handle.url,
+            "/api/ccswitch/session-handoff",
+            method="POST",
+            payload={"task_id": task["id"], "app": "codex"},
+        )
+        assert status_code == 201
+        assert session_payload["handoff"]["provider_config"]["endpoint"] == "https://api.openai.com/v1"
+        assert (tmp_path / session_payload["handoff_path"]).exists()
+        assert session_payload["execution"]["ccswitch_session_app"] == "codex"
     finally:
         handle.close()
 

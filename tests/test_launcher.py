@@ -176,6 +176,9 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
                 "model_id": "gpt-5.5-coder",
                 "label": "GPT 5.5 Coder",
                 "provider": "openai",
+                "endpoint": "https://api.openai.com/v1",
+                "config_url": "https://example.com/openai-config.json",
+                "notes": "需要本地路由",
                 "enabled": True,
                 "rank": 2,
                 "task_types": ["complex_coding", "bug_fix"],
@@ -183,6 +186,7 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         )
         assert status_code == 201
         assert created_model_payload["model"]["id"] == "gpt-5.5-coder"
+        assert created_model_payload["model"]["endpoint"] == "https://api.openai.com/v1"
 
         status_code, updated_model_payload = request_json(
             handle.url,
@@ -193,6 +197,9 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
                 "model_id": "claude-sonnet",
                 "label": "Claude Sonnet",
                 "provider": "anthropic",
+                "endpoint": "https://api.anthropic.com",
+                "config_url": "https://example.com/claude.json",
+                "notes": "需要登录态",
                 "enabled": True,
                 "rank": 1,
                 "task_types": ["bug_fix"],
@@ -206,6 +213,8 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         claude = next(model for model in models if model["id"] == "claude-sonnet")
         assert claude["task_types"] == ["bug_fix"]
         assert claude["rank"] == 1
+        assert claude["endpoint"] == "https://api.anthropic.com"
+        assert claude["notes"] == "需要登录态"
 
         status_code, deleted_model_payload = request_json(
             handle.url,

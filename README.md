@@ -15,6 +15,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 自动 Git 提交方案见 [docs/P3_10_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_10_DESIGN.md)。
 外部模型切换接管方案见 [docs/P3_11_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_11_DESIGN.md)。
 自动 Push 方案见 [docs/P3_12_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_12_DESIGN.md)。
+Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_13_DESIGN.md)。
 自动 PR 草案方案见 [docs/P3_14_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_14_DESIGN.md)。
 
 ## MVP 边界
@@ -34,11 +35,13 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 1. 先把目标拆成任务；
 2. 用 `aios run --manual TASK-ID --start` 统一生成执行记录、Context Pack 和交接单；
 3. 如需标准化切换信息，可先用 `aios ccswitch export TASK-ID` 导出 `ccswitch` 适配 JSON；
-4. 人工切换 `ccswitch` 到推荐模型；
-5. 在 Codex 或 Claude Code 中执行；
-6. 用 `aios run finish TASK-ID --summary "..."` 或 Web UI 回写 AIOS。
+4. 用 `aios ccswitch provider TASK-ID` 或 Web UI 复制 Provider Deep Link，把推荐模型的 provider 配置导入 `ccswitch`；
+5. 用 `aios ccswitch deeplink TASK-ID` 导入 handoff prompt；如需恢复会话，可导出 `aios ccswitch session TASK-ID` 生成 Session Handoff；
+6. 在 `ccswitch` 中切换或恢复到目标会话；
+7. 在 Codex 或 Claude Code 中执行；
+8. 用 `aios run finish TASK-ID --summary "..."` 或 Web UI 回写 AIOS。
 
-当前已经支持导出 `ccswitch` 适配 JSON，但仍然不会自动切换 `ccswitch`，也不会自动调用 Codex / Claude Code。后续会在这个流程稳定之后，再补自动调度和自动切换。
+当前已经支持导出 `ccswitch` 适配 JSON、Provider Deep Link、Prompt Deep Link 和 Session Handoff，但仍然不会静默切换 `ccswitch`，也不会自动恢复指定桌面会话。后续会在这个流程稳定之后，再补自动调度和自动切换。
 
 当前版本已增加执行器适配层原型：
 
@@ -50,6 +53,8 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 - `aios run ... --auto-push` 可在特性分支上继续自动 push 到远端
 - `aios run ... --auto-pr` 可在 push 成功后继续自动创建 Draft PR
 - `aios ccswitch deeplink TASK-ID` 可直接生成 `ccswitch://` Deep Link，把 handoff 导入 CC Switch
+- `aios ccswitch provider TASK-ID` 可直接生成 `resource=provider` Deep Link，把模型对应的 provider 配置导入 CC Switch
+- `aios ccswitch session TASK-ID` 可导出包含 provider/prompt deeplink 和恢复提示的 Session Handoff
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
 ## 安装与运行
@@ -100,6 +105,8 @@ aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" 
 aios run status TASK-20260630-001
 aios ccswitch export TASK-20260630-001
 aios ccswitch deeplink TASK-20260630-001 --app codex --stdout
+aios ccswitch provider TASK-20260630-001 --app codex --stdout
+aios ccswitch session TASK-20260630-001 --app codex --stdout
 aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试"
 aios handoff TASK-20260630-001 --model gpt-5.5
 aios complete TASK-20260630-001 --summary "完成登录功能并通过测试"
@@ -153,6 +160,8 @@ http://127.0.0.1:8765
 - 自动 push 当前特性分支
 - 自动创建 Draft PR
 - 生成并复制 ccswitch Deep Link
+- 生成并复制 Provider Deep Link
+- 导出并复制 Session Handoff
 - 生成 Context Pack
 - 导出 `ccswitch` 适配文件或复制 JSON
 - 生成并复制任务交接单
@@ -188,7 +197,7 @@ launcher 首页负责：
 
 launcher 首页会自动轮询刷新项目状态和摘要数据。
 
-模型库编辑统一在 launcher 首页进行。你可以修改模型 ID、显示名称、提供方、启用状态、适合任务类型和优先级；也可以新增模型、删除模型，或恢复默认模型库。后续所有项目的新建任务、目标拆解和路由推荐都会按这套全局模型库生效。
+模型库编辑统一在 launcher 首页进行。你可以修改模型 ID、显示名称、提供方、适合任务类型、优先级，以及与 `ccswitch` Provider Deep Link 相关的 provider 地址、配置 URL、说明；也可以新增模型、删除模型，或恢复默认模型库。后续所有项目的新建任务、目标拆解、路由推荐和 provider handoff 都会按这套全局模型库生效。
 
 每个项目仍然保持独立 `.aios/`，互不串扰。
 
@@ -229,6 +238,8 @@ python -m pytest
 - `aios run ... --auto-finish` 能在验证命令通过后自动完成回写；
 - `aios run ... --auto-commit` 能在执行开始前工作区干净时自动提交本地 Git 变更；
 - `aios ccswitch export` 能导出可追溯的 `ccswitch` 适配 JSON；
+- `aios ccswitch provider` 能导出可追溯的 provider Deep Link；
+- `aios ccswitch session` 能导出可追溯的 Session Handoff；
 - `aios run finish` 能更新执行记录、任务状态、`changelog.md` 和 `memory.md`；
 - `aios complete` 能更新任务状态、`changelog.md` 和 `memory.md`；
 - `aios web` 能启动本地可视化控制台；

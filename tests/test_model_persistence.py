@@ -36,6 +36,9 @@ def test_model_library_persists_across_server_restarts(tmp_path: Path, monkeypat
                 "model_id": "persistence-test-model",
                 "label": "Persistence Test",
                 "provider": "test",
+                "endpoint": "https://provider.example.com/v1",
+                "config_url": "https://provider.example.com/config.json",
+                "notes": "用于持久化测试",
                 "enabled": True,
                 "rank": 1,
                 "task_types": ["simple_coding"],
@@ -45,7 +48,8 @@ def test_model_library_persists_across_server_restarts(tmp_path: Path, monkeypat
 
         # Verify it exists
         models_after_create = load_model_library()
-        assert any(m["id"] == "persistence-test-model" for m in models_after_create)
+        created = next(m for m in models_after_create if m["id"] == "persistence-test-model")
+        assert created["endpoint"] == "https://provider.example.com/v1"
     finally:
         handle1.close()
 
@@ -59,7 +63,9 @@ def test_model_library_persists_across_server_restarts(tmp_path: Path, monkeypat
 
         # Also verify via direct file read
         models_direct = load_model_library()
-        assert any(m["id"] == "persistence-test-model" for m in models_direct)
+        created = next(m for m in models_direct if m["id"] == "persistence-test-model")
+        assert created["config_url"] == "https://provider.example.com/config.json"
+        assert created["notes"] == "用于持久化测试"
     finally:
         handle2.close()
 
@@ -79,6 +85,9 @@ def test_model_library_survives_update_and_delete(tmp_path: Path, monkeypatch) -
                 "model_id": "deepseek-v4-pro",
                 "label": "DeepSeek V4 Pro (Updated)",
                 "provider": "deepseek",
+                "endpoint": "https://api.deepseek.com",
+                "config_url": "https://example.com/deepseek.json",
+                "notes": "更新后的 provider 信息",
                 "enabled": False,
                 "rank": 99,
                 "task_types": ["documentation"],
@@ -95,5 +104,7 @@ def test_model_library_survives_update_and_delete(tmp_path: Path, monkeypatch) -
         assert deepseek["label"] == "DeepSeek V4 Pro (Updated)"
         assert deepseek["enabled"] is False
         assert deepseek["rank"] == 99
+        assert deepseek["endpoint"] == "https://api.deepseek.com"
+        assert deepseek["notes"] == "更新后的 provider 信息"
     finally:
         handle2.close()

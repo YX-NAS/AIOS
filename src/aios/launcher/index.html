@@ -64,8 +64,11 @@
           <input name="model_id" placeholder="模型 ID，例如 gpt-5.5-coder" required />
           <input name="label" placeholder="显示名称，例如 GPT-5.5 Coder" />
           <input name="provider" placeholder="提供方，例如 openai" />
+          <input name="endpoint" placeholder="Provider 地址，例如 https://api.openai.com/v1" />
+          <input name="config_url" placeholder="可选配置 URL" />
           <select id="createTaskTypes" name="taskTypes" multiple size="3"></select>
           <input name="rank" type="number" min="1" value="1" />
+          <input name="notes" placeholder="补充说明，例如需本地路由" />
           <label class="model-toggle model-create-toggle">
             <input type="checkbox" name="enabled" checked />
             <span>启用</span>
@@ -79,6 +82,9 @@
                 <th>模型 ID</th>
                 <th>显示名称</th>
                 <th>提供方</th>
+                <th>Provider 地址</th>
+                <th>配置 URL</th>
+                <th>说明</th>
                 <th>任务类型</th>
                 <th>优先级</th>
                 <th>启用</th>

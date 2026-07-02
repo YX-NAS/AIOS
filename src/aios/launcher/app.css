@@ -189,7 +189,7 @@ select {
 .task-type-select option { padding: 2px 6px; }
 
 .model-create-form {
-  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px; margin-bottom: 14px;
 }
 .model-create-form input { min-height: 36px; font-size: 12px; }

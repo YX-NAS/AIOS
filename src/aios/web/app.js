@@ -49,6 +49,8 @@ const elements = {
   startExecutionButton: document.getElementById("startExecutionButton"),
   exportCcswitchButton: document.getElementById("exportCcswitchButton"),
   copyCcswitchDeeplinkButton: document.getElementById("copyCcswitchDeeplinkButton"),
+  copyCcswitchProviderDeeplinkButton: document.getElementById("copyCcswitchProviderDeeplinkButton"),
+  copyCcswitchSessionHandoffButton: document.getElementById("copyCcswitchSessionHandoffButton"),
   copyCcswitchButton: document.getElementById("copyCcswitchButton"),
   copyCurrentPackButton: document.getElementById("copyCurrentPackButton"),
   copyHandoffButton: document.getElementById("copyHandoffButton"),
@@ -355,10 +357,13 @@ function renderExecution(task, execution) {
     <div class="muted">Draft PR：${execution.auto_pr_status || "-"}</div>
     <div class="muted">最近导出模型：${execution.ccswitch_export_model || "-"}</div>
     <div class="muted">Deep Link 应用：${execution.ccswitch_deeplink_app || "-"}</div>
+    <div class="muted">Provider Deep Link：${execution.ccswitch_provider_deeplink ? "已生成" : "-"}</div>
+    <div class="muted">Provider：${execution.ccswitch_provider_name || "-"}</div>
     <div class="muted">Pack：${execution.pack_path || "-"}</div>
     <div class="muted">Handoff：${execution.handoff_path || "-"}</div>
     <div class="muted">ccswitch 导出：${execution.ccswitch_export_path || "-"}</div>
     <div class="muted">ccswitch Deep Link：${execution.ccswitch_deeplink ? "已生成" : "-"}</div>
+    <div class="muted">Session Handoff：${execution.ccswitch_session_handoff_path || "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
@@ -674,6 +679,38 @@ elements.copyCcswitchDeeplinkButton.addEventListener("click", async () => {
     await refreshDashboard();
     setActivity(`已复制 ccswitch Deep Link。\n目标应用：${data.app}`);
   }, "复制 ccswitch Deep Link 失败。");
+});
+
+elements.copyCcswitchProviderDeeplinkButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/ccswitch/provider-deeplink", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, app: "codex" }),
+    });
+    await copyText(data.deeplink);
+    await refreshDashboard();
+    setActivity(`已复制 Provider Deep Link。\n目标应用：${data.app}\nProvider：${data.provider}\n模型：${data.model}`);
+  }, "复制 Provider Deep Link 失败。");
+});
+
+elements.copyCcswitchSessionHandoffButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/ccswitch/session-handoff", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, app: "codex" }),
+    });
+    await copyText(JSON.stringify(data.handoff, null, 2));
+    await refreshDashboard();
+    setActivity(`已复制 Session Handoff。\n文件：${data.handoff_path}\n模型：${data.handoff.model}`);
+  }, "复制 Session Handoff 失败。");
 });
 
 elements.copyCcswitchButton.addEventListener("click", async () => {

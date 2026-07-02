@@ -1,6 +1,6 @@
 [project]
 name = "aios-dev-center"
-version = "0.14.0"
+version = "0.15.0"
 description = "Local filesystem CLI for AI development project context, task routing, and context packs."
 readme = "README.md"
 license = "Apache-2.0"
