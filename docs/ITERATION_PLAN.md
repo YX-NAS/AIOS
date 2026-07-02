@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-27` 的执行器真实 CLI 可用性探测，核心功能包括：
+当前版本已交付到 `P3-29` 的 provider / 鉴权就绪探测，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -34,6 +34,7 @@
 - `P3-24` bridge 恢复信号自动确认已落地首版受控自动确认能力
 - `P3-26` 历史会话候选与恢复建议已落地首版候选排序、历史恢复命令和 Web 挂接入口
 - `P3-27` 执行器真实 CLI 可用性探测已落地首版 doctor、healthcheck 和自动派发安全门
+- `P3-29` provider / 鉴权就绪探测已落地首版模型运行时状态、`aios model doctor` 和 launcher 实时展示
 
 已知短板：
 
@@ -46,8 +47,10 @@
 - 已经能把 `ccswitch -> 会话恢复 -> 终端继续` 串起来，也能定位桥接失败步骤，并显式确认 bridge 结果；系统还能自动看到终端恢复是否启动，但还不能自动读取 `ccswitch` 内部状态，也不能自动选择历史会话
 - 现在已经能基于已知执行记录给出历史会话候选，并显式使用最佳候选恢复
 - 现在自动派发也会先判断命令型执行器是否真实可用，而不是只看配置存在
+- 现在还能先判断模型 provider 配置和本机鉴权变量是否就绪，而不是只看路由推荐结果
 - 现在还能在检测到本地恢复 signal 后受控自动确认 bridge，但默认仍不开启
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
+- provider readiness 目前仍停留在本机配置与环境变量层，不等于真实远端 API 一定可用
 - 只支持本地自动 commit，还没有自动 push / PR
 - 当前只接通 `ccswitch` prompt Deep Link，provider / session 级接管仍处于数据层补齐阶段
 - 还没有自动创建 PR，远端交付还停在分支 push
@@ -118,6 +121,7 @@
 | P3-24 | bridge 恢复信号自动确认 | 检测到本地 signal 后可显式启用自动确认，减少一次重复人工收口 |
 | P3-26 | 历史会话候选与恢复建议 | 从执行记录整理历史会话候选，并支持显式使用最佳候选恢复 |
 | P3-27 | 执行器真实 CLI 可用性探测 | 对执行器做 runtime doctor / healthcheck，并阻止自动派发到不可用 CLI |
+| P3-29 | Provider / 鉴权就绪探测 | 对全局模型库增加 provider 地址、鉴权变量和运行时 readiness 展示，避免派发到本机未配置完成的模型 |
 
 ### P4 — 平台化
 
@@ -132,10 +136,10 @@
 
 ## 近期重点（接下来 2 周）
 
-1. P3-25：评估 `ccswitch` 内部状态读取或外部确认替代方案
+1. P3-28：评估验证失败后的自动二次派发策略
 2. P3-9：补齐成本与执行统计
-3. P3-28：评估验证失败后的自动二次派发策略
-4. P3-29：评估 provider / 登录态探测能力
+3. P3-29 后续：从静态 env readiness 升级到 provider API handshake / session truth source
+4. P3-25：评估 `ccswitch` 内部状态读取或外部确认替代方案
 5. P0-2：持续同步操作手册与规划文档
 
 ## 下一阶段实施目标
@@ -145,6 +149,7 @@
 - 在不破坏现有半自动流程的前提下，把自动派发与自动收口逐步接上
 - 继续解决复杂目标拆解过浅的问题，而不是只堆执行入口
 - 继续补齐成本、模型切换、远程交付这三块，才能接近完整自动交付链
+- 在执行器 readiness 之外，再补 provider readiness，减少“能派发但模型实际不可用”的空转
 
 专项规划见 [docs/plans/aios-system-improvement-roadmap.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/plans/aios-system-improvement-roadmap.md)。
 
@@ -177,5 +182,6 @@
 | 2026-07-02 | bridge 恢复 signal 自动确认默认关闭，必须显式启用 | signal 只能证明恢复命令已拉起，不能替代对外部会话正确性的最终判断 |
 | 2026-07-02 | 历史会话恢复先从 `.aios/executions.json` 派生候选，不新增独立会话库 | 先复用已有审计数据源，把恢复建议做稳，再决定是否拆出专门 registry |
 | 2026-07-02 | 执行器可用性先做 binary + healthcheck 探测，不直接假设 CLI 登录态可用 | 先让自动派发知道“命令能不能跑”，再逐步补更强的 provider / auth 真实状态检查 |
+| 2026-07-02 | provider readiness 先做 endpoint/config + auth env 检查，不直接声称远端登录态真实可用 | 先把本机配置真相补齐，再评估更重的 API 握手或桌面 session 观测 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |

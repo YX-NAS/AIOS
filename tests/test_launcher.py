@@ -117,6 +117,7 @@ def test_launcher_api_manages_multiple_projects(tmp_path: Path, monkeypatch) -> 
 
 def test_launcher_project_summary_reflects_project_data_and_scan(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     project = tmp_path / "workspace" / "alpha"
     project.mkdir(parents=True)
     main(["--root", str(project), "init", "--name", "alpha", "--type", "web-app"])
@@ -137,6 +138,7 @@ def test_launcher_project_summary_reflects_project_data_and_scan(tmp_path: Path,
         assert created_payload["project"]["open_tasks"] == 1
         assert created_payload["project"]["latest_task_title"] == "实现登录功能"
         assert created_payload["project"]["enabled_model_count"] >= 1
+        assert created_payload["project"]["provider_ready_count"] >= 1
 
         status_code, scan_payload = request_json(
             handle.url,
@@ -160,13 +162,18 @@ def test_launcher_project_summary_reflects_project_data_and_scan(tmp_path: Path,
 
 def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
     handle = start_launcher_server(port=0)
     try:
         status_code, models_payload = request_json(handle.url, "/api/models")
         assert status_code == 200
         assert models_payload["enabled_model_count"] >= 1
+        assert models_payload["provider_ready_count"] >= 1
         assert any(model["id"] == "deepseek-v4-pro" for model in models_payload["models"])
+        gpt_model = next(model for model in models_payload["models"] if model["id"] == "gpt-5.5")
+        assert gpt_model["runtime"]["auth_status"] == "ready"
+        assert gpt_model["runtime"]["ready"] is True
 
         status_code, created_model_payload = request_json(
             handle.url,
@@ -178,6 +185,7 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
                 "provider": "openai",
                 "endpoint": "https://api.openai.com/v1",
                 "config_url": "https://example.com/openai-config.json",
+                "auth_env_vars": ["OPENAI_API_KEY"],
                 "notes": "需要本地路由",
                 "enabled": True,
                 "rank": 2,
@@ -187,6 +195,7 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         assert status_code == 201
         assert created_model_payload["model"]["id"] == "gpt-5.5-coder"
         assert created_model_payload["model"]["endpoint"] == "https://api.openai.com/v1"
+        assert created_model_payload["model"]["auth_env_vars"] == ["OPENAI_API_KEY"]
 
         status_code, updated_model_payload = request_json(
             handle.url,
@@ -199,6 +208,7 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
                 "provider": "anthropic",
                 "endpoint": "https://api.anthropic.com",
                 "config_url": "https://example.com/claude.json",
+                "auth_env_vars": ["ANTHROPIC_API_KEY", "CLAUDE_CODE_TOKEN"],
                 "notes": "需要登录态",
                 "enabled": True,
                 "rank": 1,
@@ -215,6 +225,7 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         assert claude["rank"] == 1
         assert claude["endpoint"] == "https://api.anthropic.com"
         assert claude["notes"] == "需要登录态"
+        assert claude["auth_env_vars"] == ["ANTHROPIC_API_KEY", "CLAUDE_CODE_TOKEN"]
 
         status_code, deleted_model_payload = request_json(
             handle.url,

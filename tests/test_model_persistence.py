@@ -108,3 +108,34 @@ def test_model_library_survives_update_and_delete(tmp_path: Path, monkeypatch) -
         assert deepseek["notes"] == "更新后的 provider 信息"
     finally:
         handle2.close()
+
+
+def test_model_library_persists_auth_env_vars(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+
+    handle = start_launcher_server(port=0)
+    try:
+        status, payload = request_json(
+            handle.url,
+            "/api/models/create",
+            method="POST",
+            payload={
+                "model_id": "custom-provider-model",
+                "label": "Custom Provider Model",
+                "provider": "custom",
+                "endpoint": "https://provider.example.com/v1",
+                "config_url": "https://provider.example.com/config.json",
+                "auth_env_vars": ["CUSTOM_PROVIDER_TOKEN", "CUSTOM_PROVIDER_SECRET"],
+                "enabled": True,
+                "rank": 3,
+                "task_types": ["complex_coding"],
+            },
+        )
+        assert status == 201
+        assert payload["model"]["auth_env_vars"] == ["CUSTOM_PROVIDER_TOKEN", "CUSTOM_PROVIDER_SECRET"]
+    finally:
+        handle.close()
+
+    models = load_model_library()
+    created = next(model for model in models if model["id"] == "custom-provider-model")
+    assert created["auth_env_vars"] == ["CUSTOM_PROVIDER_TOKEN", "CUSTOM_PROVIDER_SECRET"]

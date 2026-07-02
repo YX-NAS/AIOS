@@ -78,6 +78,7 @@ def start_launcher_server(host: str = DEFAULT_HOST, port: int = 8755) -> Launche
                         (payload.get("homepage") or "").strip() or None,
                         (payload.get("notes") or "").strip() or None,
                         (payload.get("config_url") or "").strip() or None,
+                        payload.get("auth_env_vars") or None,
                     )
                     return self._send_json({"message": "Model updated.", "model": model})
                 if parsed.path == "/api/models/create":
@@ -94,6 +95,7 @@ def start_launcher_server(host: str = DEFAULT_HOST, port: int = 8755) -> Launche
                         (payload.get("homepage") or "").strip() or None,
                         (payload.get("notes") or "").strip() or None,
                         (payload.get("config_url") or "").strip() or None,
+                        payload.get("auth_env_vars") or None,
                     )
                     return self._send_json({"message": "Model created.", "model": model}, status=HTTPStatus.CREATED)
                 if parsed.path == "/api/models/delete":

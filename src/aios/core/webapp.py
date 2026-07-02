@@ -580,6 +580,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "packs": list_packs(self.project_root) if initialized else [],
                 "handoffs": list_handoffs(self.project_root) if initialized else [],
                 "enabled_model_count": model_summary()["enabled_model_count"],
+                "provider_ready_count": model_summary()["provider_ready_count"],
                 "enabled_executor_count": executor_summary()["enabled_executor_count"],
                 "available_executor_count": executor_summary()["available_executor_count"],
                 **(scheduler_summary(self.project_root) if initialized else scheduler_summary_empty()),

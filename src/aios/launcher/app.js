@@ -92,6 +92,10 @@ function renderProjects() {
               <div class="metric-label">启用模型</div>
             </div>
             <div class="metric-tile">
+              <div class="metric-value">${project.provider_ready_count || 0}</div>
+              <div class="metric-label">Provider 就绪</div>
+            </div>
+            <div class="metric-tile">
               <div class="metric-value">${project.available_executor_count || 0}</div>
               <div class="metric-label">可用执行器</div>
             </div>
@@ -208,10 +212,12 @@ function renderModels() {
           <td><input name="provider" value="${model.provider}" placeholder="例如：openai" /></td>
           <td><input name="endpoint" value="${model.endpoint || ""}" placeholder="https://api.example.com/v1" /></td>
           <td><input name="configUrl" value="${model.config_url || ""}" placeholder="https://..." /></td>
+          <td><input name="authEnvVars" value="${(model.auth_env_vars || []).join(", ")}" placeholder="OPENAI_API_KEY" /></td>
           <td><input name="notes" value="${model.notes || ""}" placeholder="路由或登录说明" /></td>
           <td class="td-task-types"><div class="task-type-checkboxes" data-task-types="${model.task_types.join(",")}"></div></td>
           <td><input name="rank" type="number" min="1" value="${model.rank}" class="rank-input" /></td>
           <td class="td-checkbox"><label class="model-toggle"><input type="checkbox" name="enabled" ${model.enabled ? "checked" : ""} /><span></span></label></td>
+          <td>${renderRuntimeBadge(model.runtime)}</td>
           <td class="td-actions">
             <button type="button" class="button secondary save-model-button" data-model-id="${model.id}">保存</button>
             <button type="button" class="button warn delete-model-button" data-model-id="${model.id}">删除</button>
@@ -244,6 +250,7 @@ function renderModels() {
           provider: String(row.querySelector('input[name="provider"]').value || "").trim(),
           endpoint: String(row.querySelector('input[name="endpoint"]').value || "").trim(),
           config_url: String(row.querySelector('input[name="configUrl"]').value || "").trim(),
+          auth_env_vars: parseCommaList(row.querySelector('input[name="authEnvVars"]').value || ""),
           notes: String(row.querySelector('input[name="notes"]').value || "").trim(),
           enabled: enabledCheckbox.checked,
           rank: Number(row.querySelector('input[name="rank"]').value || 1),
@@ -282,6 +289,34 @@ function statusLabel(status) {
     return "路径失效";
   }
   return "未运行";
+}
+
+function parseCommaList(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function renderRuntimeBadge(runtime) {
+  const data = runtime || {};
+  const ready = Boolean(data.ready);
+  const authLabel =
+    data.auth_status === "ready"
+      ? "鉴权已就绪"
+      : data.auth_status === "missing_env"
+        ? `缺少变量: ${(data.missing_auth_env_vars || []).join(", ") || "-"}`
+        : "未配置鉴权";
+  const providerLabel = data.provider_config_status === "ready" ? "Provider 已配置" : "缺少 Provider 配置";
+  const reason = data.reason || "可用于执行";
+  return `
+    <div class="runtime-state ${ready ? "ready" : "blocked"}">
+      <div class="runtime-pill">${ready ? "就绪" : "未就绪"}</div>
+      <div class="runtime-detail">${providerLabel}</div>
+      <div class="runtime-detail">${authLabel}</div>
+      <div class="runtime-reason">${reason}</div>
+    </div>
+  `;
 }
 
 function formatList(items) {
@@ -348,6 +383,7 @@ elements.modelCreateForm.addEventListener("submit", async (event) => {
       provider: String(form.get("provider") || "").trim(),
       endpoint: String(form.get("endpoint") || "").trim(),
       config_url: String(form.get("config_url") || "").trim(),
+      auth_env_vars: parseCommaList(form.get("auth_env_vars") || ""),
       notes: String(form.get("notes") || "").trim(),
       enabled: form.get("enabled") === "on",
       rank: Number(form.get("rank") || 1),

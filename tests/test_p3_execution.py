@@ -1807,6 +1807,29 @@ def test_executor_doctor_cli_reports_runtime(monkeypatch, capsys) -> None:
     assert "healthcheck: ok" in output
 
 
+def test_model_doctor_cli_reports_provider_auth_readiness(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    assert main(["model", "doctor", "gpt-5.5"]) == 0
+    output = capsys.readouterr().out
+    assert "gpt-5.5: ready" in output
+    assert "auth_status: ready" in output
+    assert "auth_env_vars: OPENAI_API_KEY" in output
+    assert "provider_config: ready" in output
+
+
+def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+
+    assert main(["--root", str(tmp_path), "status"]) == 0
+    output = capsys.readouterr().out
+    assert "Providers:" in output
+    assert "ready /" in output
+
+
 def test_plan_draft_api_create_confirm_and_delete(tmp_path: Path) -> None:
     handle = start_web_server(tmp_path, port=0)
     try:

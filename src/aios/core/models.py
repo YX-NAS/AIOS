@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from aios.core.instance_manager import ensure_state_dir
@@ -16,6 +17,20 @@ DEFAULT_CONTEXT_WINDOWS = {
     "deepseek-v4-flash": 128000,
     "gpt-5.4-mini": 128000,
     "minimax-m2.7-highspeed": 32000,
+}
+
+DEFAULT_PROVIDER_ENDPOINTS = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com",
+    "deepseek": "https://api.deepseek.com/v1",
+    "minimax": "https://api.minimax.chat/v1",
+}
+
+DEFAULT_PROVIDER_AUTH_ENV_VARS = {
+    "openai": ["OPENAI_API_KEY"],
+    "anthropic": ["ANTHROPIC_API_KEY"],
+    "deepseek": ["DEEPSEEK_API_KEY"],
+    "minimax": ["MINIMAX_API_KEY"],
 }
 
 
@@ -39,10 +54,11 @@ def default_model_library() -> list[dict]:
                 "rank": index + 1,
                 "task_types": sorted(model_tasks[model]),
                 "context_window": DEFAULT_CONTEXT_WINDOWS.get(model),
-                "endpoint": None,
+                "endpoint": DEFAULT_PROVIDER_ENDPOINTS.get(infer_provider(model)),
                 "homepage": None,
                 "notes": None,
                 "config_url": None,
+                "auth_env_vars": default_auth_env_vars(infer_provider(model)),
             }
         )
     return models
@@ -102,10 +118,11 @@ def normalize_models(models: list[dict]) -> list[dict]:
                 "rank": max(1, int(model.get("rank", index + 1))),
                 "task_types": sorted(dict.fromkeys(cleaned_task_types)),
                 "context_window": model.get("context_window") or DEFAULT_CONTEXT_WINDOWS.get(model_id),
-                "endpoint": _clean_optional_text(model.get("endpoint")),
+                "endpoint": _clean_optional_text(model.get("endpoint")) or DEFAULT_PROVIDER_ENDPOINTS.get(str(model.get("provider") or infer_provider(model_id)).strip().lower()),
                 "homepage": _clean_optional_text(model.get("homepage")),
                 "notes": _clean_optional_text(model.get("notes")),
                 "config_url": _clean_optional_text(model.get("config_url")),
+                "auth_env_vars": _clean_auth_env_vars(model.get("auth_env_vars"), str(model.get("provider") or infer_provider(model_id)).strip().lower()),
             }
         )
     _ensure_unique_ids(normalized)
@@ -125,6 +142,7 @@ def create_model(
     homepage: str | None = None,
     notes: str | None = None,
     config_url: str | None = None,
+    auth_env_vars: list[str] | None = None,
 ) -> dict:
     models = load_model_library(root)
     model_id = _clean_model_id(model_id)
@@ -138,10 +156,11 @@ def create_model(
         "rank": max(1, rank),
         "task_types": _clean_task_types(task_types or []),
         "context_window": DEFAULT_CONTEXT_WINDOWS.get(model_id),
-        "endpoint": _clean_optional_text(endpoint),
+        "endpoint": _clean_optional_text(endpoint) or DEFAULT_PROVIDER_ENDPOINTS.get((provider or infer_provider(model_id)).strip().lower()),
         "homepage": _clean_optional_text(homepage),
         "notes": _clean_optional_text(notes),
         "config_url": _clean_optional_text(config_url),
+        "auth_env_vars": _clean_auth_env_vars(auth_env_vars, (provider or infer_provider(model_id)).strip().lower()),
     }
     models.append(model)
     save_model_library(root, models)
@@ -161,6 +180,7 @@ def update_model(
     homepage: str | None = None,
     notes: str | None = None,
     config_url: str | None = None,
+    auth_env_vars: list[str] | None = None,
 ) -> dict:
     models = load_model_library(root)
     target_id = _clean_model_id(model_id)
@@ -175,10 +195,11 @@ def update_model(
             model["rank"] = max(1, rank)
             model["task_types"] = _clean_task_types(task_types)
             model["context_window"] = model.get("context_window") or DEFAULT_CONTEXT_WINDOWS.get(target_id)
-            model["endpoint"] = _clean_optional_text(endpoint)
+            model["endpoint"] = _clean_optional_text(endpoint) or DEFAULT_PROVIDER_ENDPOINTS.get(model["provider"])
             model["homepage"] = _clean_optional_text(homepage)
             model["notes"] = _clean_optional_text(notes)
             model["config_url"] = _clean_optional_text(config_url)
+            model["auth_env_vars"] = _clean_auth_env_vars(auth_env_vars, model["provider"])
             save_model_library(root, models)
             return next(item for item in load_model_library(root) if item["id"] == target_id)
     raise ValueError(f"Model not found: {current_model_id}")
@@ -195,10 +216,12 @@ def delete_model(root: Path | None, model_id: str) -> list[dict]:
 
 def model_summary(root: Path | None = None) -> dict:
     models = load_model_library(root)
+    runtime = {model["id"]: model_runtime_status(model) for model in models}
     return {
-        "models": models,
+        "models": [{**model, "runtime": runtime[model["id"]]} for model in models],
         "task_types": TASK_TYPES,
         "enabled_model_count": len([model for model in models if model["enabled"]]),
+        "provider_ready_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["ready"]]),
     }
 
 
@@ -210,6 +233,43 @@ def get_model(root: Path | None, model_id: str) -> dict | None:
         if model["id"] == target:
             return model
     return None
+
+
+def default_auth_env_vars(provider: str) -> list[str]:
+    return list(DEFAULT_PROVIDER_AUTH_ENV_VARS.get(str(provider or "").strip().lower(), []))
+
+
+def model_runtime_status(model: dict) -> dict:
+    provider = str(model.get("provider") or "").strip().lower()
+    endpoint = str(model.get("endpoint") or "").strip()
+    config_url = str(model.get("config_url") or "").strip()
+    auth_env_vars = _clean_auth_env_vars(model.get("auth_env_vars"), provider)
+    present_env_vars = [name for name in auth_env_vars if str(os.environ.get(name) or "").strip()]
+    missing_env_vars = [name for name in auth_env_vars if name not in present_env_vars]
+    auth_status = "ready" if auth_env_vars and not missing_env_vars else ("not_configured" if not auth_env_vars else "missing_env")
+    provider_config_status = "ready" if endpoint or config_url else "missing_config"
+    ready = bool(provider and provider_config_status == "ready" and auth_status == "ready")
+    if not provider:
+        reason = "Provider is not configured."
+    elif provider_config_status != "ready":
+        reason = "Provider endpoint or config URL is missing."
+    elif auth_status == "missing_env":
+        reason = f"Missing auth env vars: {', '.join(missing_env_vars)}"
+    elif auth_status == "not_configured":
+        reason = "No auth env vars configured for this provider."
+    else:
+        reason = None
+    return {
+        "ready": ready,
+        "provider_config_status": provider_config_status,
+        "auth_status": auth_status,
+        "auth_env_vars": auth_env_vars,
+        "present_auth_env_vars": present_env_vars,
+        "missing_auth_env_vars": missing_env_vars,
+        "endpoint": endpoint or None,
+        "config_url": config_url or None,
+        "reason": reason,
+    }
 
 
 def _clean_model_id(model_id: str) -> str:
@@ -226,6 +286,16 @@ def _clean_task_types(task_types: list[str]) -> list[str]:
 def _clean_optional_text(value: object) -> str | None:
     cleaned = str(value or "").strip()
     return cleaned or None
+
+
+def _clean_auth_env_vars(values: object, provider: str) -> list[str]:
+    if values is None:
+        return default_auth_env_vars(provider)
+    if isinstance(values, str):
+        raw_items = [item.strip() for item in values.split(",")]
+    else:
+        raw_items = [str(item).strip() for item in (values or [])]
+    return [item for item in dict.fromkeys(raw_items) if item]
 
 
 def _ensure_unique_ids(models: list[dict]) -> None:

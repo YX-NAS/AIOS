@@ -172,6 +172,36 @@ select {
 .td-actions { white-space: nowrap; width: 130px; }
 .td-actions .button { min-height: 30px; padding: 0 8px; font-size: 11px; }
 
+.runtime-state { min-width: 170px; display: grid; gap: 4px; }
+.runtime-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  width: fit-content;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.runtime-state.ready .runtime-pill {
+  color: var(--success);
+  background: var(--success-soft);
+  border: 1px solid rgba(0, 230, 118, 0.18);
+}
+.runtime-state.blocked .runtime-pill {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border: 1px solid rgba(255, 145, 0, 0.18);
+}
+.runtime-detail, .runtime-reason {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  word-break: break-word;
+}
+.runtime-reason { color: var(--muted); }
+
 /* ===== Task Type Checkboxes ===== */
 .task-type-checkboxes { display: flex; flex-wrap: wrap; gap: 2px 6px; }
 .task-type-check {
@@ -218,7 +248,7 @@ select {
 .project-name { font-size: 16px; font-weight: 700; }
 .project-root, .project-url { font-size: 12px; color: var(--muted); word-break: break-all; line-height: 1.5; }
 
-.project-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.project-metrics { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .metric-tile {
   border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--surface); padding: 10px;
@@ -260,6 +290,7 @@ select {
   .launcher-hero, .panel-header { flex-direction: column; }
   .hero-actions { justify-items: start; }
   .model-create-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .project-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }

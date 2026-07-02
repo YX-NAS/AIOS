@@ -9,6 +9,7 @@ from aios.commands.executor import add_executor_parser, run_executor
 from aios.commands.handoff import add_handoff_parser, run_handoff
 from aios.commands.init import add_init_parser, run_init
 from aios.commands.launcher import add_launcher_parser, run_launcher
+from aios.commands.model import add_model_parser, run_model
 from aios.commands.pack import add_pack_parser, run_pack
 from aios.commands.run import add_run_parser, run_run
 from aios.commands.route import add_route_parser, run_route
@@ -28,6 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_status_parser(subparsers)
     add_ccswitch_parser(subparsers)
     add_executor_parser(subparsers)
+    add_model_parser(subparsers)
     add_task_parser(subparsers)
     add_route_parser(subparsers)
     add_pack_parser(subparsers)
@@ -50,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": run_status,
         "ccswitch": run_ccswitch,
         "executor": run_executor,
+        "model": run_model,
         "task": run_task,
         "route": run_route,
         "pack": run_pack,
