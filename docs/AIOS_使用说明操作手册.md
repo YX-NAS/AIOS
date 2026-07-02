@@ -585,6 +585,13 @@ aios --root /path/to/project ccswitch confirm TASK-20260701-001 --status confirm
 - bridge 本身是否失败
 - 外部切换结果是否确认可继续
 
+从当前版本开始，如果 bridge 还是 `pending_confirmation`：
+
+- `自动推进下一步` 不会继续派发后续任务
+- 调度状态会明确提示先确认 bridge
+
+这样可以避免系统在模型或会话切换结果未确认时继续自动执行。
+
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 
 推荐顺序：

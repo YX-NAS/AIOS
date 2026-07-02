@@ -143,6 +143,8 @@ def build_dispatch_block_reason(summary: dict) -> str:
         return "存在待复核任务，需先 review 并 finish；如需自动收口，请提供 summary 并启用 auto finish。"
     if summary.get("failed_count"):
         return "存在执行失败任务，需先排查失败原因。"
+    if summary.get("bridge_pending_count"):
+        return "存在待确认的 bridge 切换任务，需先确认外部模型/会话切换结果。"
     if summary.get("active_count"):
         return "存在执行中的任务，暂不自动派发新任务。"
     if summary.get("blocked_count"):

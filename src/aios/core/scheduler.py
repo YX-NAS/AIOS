@@ -18,12 +18,13 @@ def scheduler_summary(root: Path) -> dict:
 
     ready = [item for item in items if item["scheduler_state"] == "ready"]
     blocked = [item for item in items if item["scheduler_state"] == "blocked"]
+    bridge_confirmation = [item for item in items if item["scheduler_state"] == "bridge_confirmation"]
     review_pending = [item for item in items if item["scheduler_state"] == "review_pending"]
     failed = [item for item in items if item["scheduler_state"] == "failed"]
     active = [item for item in items if item["scheduler_state"] == "active"]
 
     next_item = None
-    for state in ("review_pending", "failed", "ready", "active"):
+    for state in ("review_pending", "failed", "bridge_confirmation", "ready", "active"):
         next_item = next((item for item in items if item["scheduler_state"] == state), None)
         if next_item:
             break
@@ -32,6 +33,7 @@ def scheduler_summary(root: Path) -> dict:
         "items": items,
         "ready_count": len(ready),
         "blocked_count": len(blocked),
+        "bridge_pending_count": len(bridge_confirmation),
         "review_pending_count": len(review_pending),
         "failed_count": len(failed),
         "active_count": len(active),
@@ -43,6 +45,7 @@ def scheduler_summary(root: Path) -> dict:
 
 def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> dict:
     execution = latest_execution_for_task(root, task["id"])
+    bridge_confirmation_status = str(execution.get("ccswitch_bridge_confirmation_status") or "").strip() if execution else ""
     dependency_ids = task.get("depends_on_task_ids") or []
     unmet_dependencies = [task_id for task_id in dependency_ids if task_map.get(task_id, {}).get("status") != "done"]
     pack_quality = "unknown"
@@ -64,6 +67,14 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         scheduler_state = "failed"
         next_action = "inspect_retry"
         reason = execution.get("executor_stderr_excerpt") or "最近一次执行失败。"
+    elif execution and bridge_confirmation_status == "confirmed_failed":
+        scheduler_state = "failed"
+        next_action = "retry_bridge"
+        reason = execution.get("ccswitch_bridge_confirmation_note") or execution.get("ccswitch_bridge_error") or "Bridge 已确认失败，需重新切换或重试。"
+    elif execution and bridge_confirmation_status == "pending_confirmation":
+        scheduler_state = "bridge_confirmation"
+        next_action = "confirm_bridge"
+        reason = execution.get("ccswitch_bridge_error") or "Bridge 已执行，等待确认外部切换结果后再继续。"
     elif task["status"] == "running":
         scheduler_state = "active"
         next_action = "monitor_running"
@@ -93,4 +104,5 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         "pack_quality": pack_quality,
         "pack_warnings": warnings,
         "latest_execution_status": execution.get("status") if execution else None,
+        "bridge_confirmation_status": bridge_confirmation_status or None,
     }

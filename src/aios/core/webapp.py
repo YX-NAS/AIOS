@@ -621,6 +621,7 @@ def scheduler_summary_empty() -> dict:
     return {
         "ready_count": 0,
         "blocked_count": 0,
+        "bridge_pending_count": 0,
         "review_pending_count": 0,
         "failed_count": 0,
         "active_count": 0,

@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-21` 的 bridge 确认闭环，核心功能包括：
+当前版本已交付到 `P3-22` 的 bridge 确认安全门，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -29,6 +29,7 @@
 - `P3-19` `ccswitch` 桥接层已落地首版 provider/prompt/resume 顺序桥接能力
 - `P3-20` 桥接结果可观测层已落地首版步骤状态、失败定位和错误回写能力
 - `P3-21` bridge 确认闭环已落地首版 `pending_confirmation -> confirmed_ready/failed` 状态收口
+- `P3-22` bridge 确认安全门已落地首版调度阻塞与自动派发保护
 
 已知短板：
 
@@ -38,7 +39,7 @@
 - Context Pack 还缺分层与质量校验
 - 自动化还没有接管 `ccswitch` 和真实会话切换
 - 还不会自动识别或提取真实 session id
-- 已经能把 `ccswitch -> 会话恢复 -> 终端继续` 串起来，也能定位桥接失败步骤，并显式确认 bridge 结果，但还不能自动读取 `ccswitch` 内部状态，也不能自动选择历史会话
+- 已经能把 `ccswitch -> 会话恢复 -> 终端继续` 串起来，也能定位桥接失败步骤，并显式确认 bridge 结果；自动调度也会在未确认时停下，但还不能自动读取 `ccswitch` 内部状态，也不能自动选择历史会话
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
 - 只支持本地自动 commit，还没有自动 push / PR
 - 当前只接通 `ccswitch` prompt Deep Link，provider / session 级接管仍处于数据层补齐阶段
@@ -105,6 +106,7 @@
 | P3-19 | `ccswitch` 桥接层 | `ccswitch bridge` 把 provider/prompt/resume 串成一条受控桥接链路 |
 | P3-20 | 桥接结果可观测层 | bridge 记录步骤状态、失败位置和错误信息，便于后续自动重试与确认 |
 | P3-21 | bridge 确认闭环 | bridge 结果进入 `pending_confirmation / confirmed_ready / confirmed_failed` 收口状态 |
+| P3-22 | bridge 确认安全门 | 调度器和自动派发在 bridge 未确认时停止推进，避免误自动化 |
 
 ### P4 — 平台化
 
@@ -119,10 +121,10 @@
 
 ## 近期重点（接下来 2 周）
 
-1. P3-22：评估 `ccswitch` 内部状态读取或外部确认替代方案
+1. P3-23：评估 `ccswitch` 内部状态读取或外部确认替代方案
 2. P3-9：补齐成本与执行统计
-3. P3-23：评估历史会话选择与搜索自动化
-4. P3-24：评估执行器真实 CLI 接管面
+3. P3-24：评估历史会话选择与搜索自动化
+4. P3-25：评估执行器真实 CLI 接管面
 5. P0-2：持续同步操作手册与规划文档
 
 ## 下一阶段实施目标
@@ -159,5 +161,6 @@
 | 2026-07-02 | `ccswitch` 桥接层先做 provider/prompt/resume 顺序编排，不做 UI 状态确认 | 先把离散动作收成一条可追踪链路，再评估更脆弱的桌面观察与控制 |
 | 2026-07-02 | bridge 先做步骤级状态和错误留痕，不直接声称导入成功 | 先让系统知道失败在哪一步，再决定是否继续接桌面确认能力 |
 | 2026-07-02 | bridge 确认先用显式状态回写，不伪装成自动读取外部 App 状态 | 先把“系统观察结果”和“操作者确认结果”分离建模，再决定是否补桌面观测能力 |
+| 2026-07-02 | 自动派发先尊重 bridge 确认状态，不在未确认时继续推进 | 先把自动化安全门补齐，避免系统自己跨过外部切换确认环节 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |

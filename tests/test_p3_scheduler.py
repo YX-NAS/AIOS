@@ -4,9 +4,11 @@ import json
 from pathlib import Path
 from urllib.request import urlopen
 
+import aios.core.ccswitch as ccswitch_core
 from aios.core.scheduler import scheduler_summary
 from aios.core.webapp import start_web_server
 from aios.main import main
+from aios.core.models import create_model
 
 
 def test_scheduler_summary_tracks_ready_blocked_and_review_pending(tmp_path: Path) -> None:
@@ -59,6 +61,41 @@ def test_scheduler_summary_marks_review_pending_after_executor_run(tmp_path: Pat
     summary = scheduler_summary(tmp_path)
     assert summary["review_pending_count"] == 1
     assert summary["next_action"] == "review_finish"
+
+
+def test_scheduler_summary_marks_bridge_confirmation_as_blocking_state(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", lambda deeplink: None)
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: None)
+
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--model", "gpt-5.5-coder", "--start"])
+    main(["--root", str(tmp_path), "run", "attach", task["id"], "--executor", "codex-cli", "--session-id", "session-123"])
+    main(["--root", str(tmp_path), "ccswitch", "bridge", task["id"], "--open"])
+
+    summary = scheduler_summary(tmp_path)
+    item = summary["items"][0]
+    assert item["scheduler_state"] == "bridge_confirmation"
+    assert item["next_action"] == "confirm_bridge"
+    assert item["bridge_confirmation_status"] == "pending_confirmation"
+    assert summary["bridge_pending_count"] == 1
+    assert summary["next_action"] == "confirm_bridge"
 
 
 def test_scheduler_api_is_visible_in_web_ui(tmp_path: Path) -> None:

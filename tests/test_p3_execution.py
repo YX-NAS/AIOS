@@ -1412,6 +1412,59 @@ def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path:
         handle.close()
 
 
+def test_run_dispatch_api_blocks_when_bridge_confirmation_is_pending(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", lambda deeplink: None)
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: None)
+    create_executor(
+        None,
+        "dispatch-bridge-cli",
+        label="Dispatch Bridge CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(handle.url, "/api/run/manual", method="POST", payload={"task_id": task["id"], "model": "gpt-5.5-coder", "start": True})
+        request_json(handle.url, "/api/run/attach", method="POST", payload={"task_id": task["id"], "executor_id": "codex-cli", "session_id": "session-xyz"})
+        request_json(handle.url, "/api/ccswitch/bridge", method="POST", payload={"task_id": task["id"], "app": "codex", "open": True})
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={"executor_id": "dispatch-bridge-cli"},
+        )
+        assert status_code == 201
+        assert payload["dispatched"] is False
+        assert "待确认的 bridge" in payload["reason"]
+    finally:
+        handle.close()
+
+
 def test_executor_library_cli_lists_defaults(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     assert main(["executor", "reset"]) == 0

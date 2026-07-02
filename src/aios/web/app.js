@@ -421,6 +421,7 @@ function renderScheduler(task) {
     <strong>${item.scheduler_state}</strong>
     <div class="muted">下一步：${item.next_action || "-"}</div>
     <div class="muted">原因：${item.reason || "-"}</div>
+    <div class="muted">Bridge 确认：${item.bridge_confirmation_status || "-"}</div>
     <div class="muted">Pack 质量：${item.pack_quality || "-"}</div>
     <div class="muted">未满足依赖：${(item.unmet_dependencies || []).join(", ") || "-"}</div>
     ${warnings}
