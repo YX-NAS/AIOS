@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from aios.core.ccswitch import export_ccswitch_payload
 from aios.core.context_builder import build_context_pack
+from aios.core.dispatch import auto_dispatch_next_task
 from aios.core.executors import executor_summary
 from aios.core.executions import execution_summary, finish_manual_execution, latest_execution_for_task, prepare_manual_execution
 from aios.core.executions import run_executor_execution
@@ -276,6 +277,21 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "handoff": result["handoff"],
                             "execution": result["execution"],
                             "executor": result["executor"],
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/run/dispatch":
+                    result = auto_dispatch_next_task(
+                        self.project_root,
+                        executor_id=(payload.get("executor_id") or "").strip() or None,
+                        model=(payload.get("model") or "").strip() or None,
+                        refresh_pack=bool(payload.get("refresh_pack")),
+                        note=(payload.get("note") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Task dispatched." if result["dispatched"] else "No dispatchable task.",
+                            **result,
                         },
                         status=HTTPStatus.CREATED,
                     )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from aios.core.dispatch import auto_dispatch_next_task
 from aios.core.executions import (
     finish_manual_execution,
     latest_execution_for_task,
@@ -13,7 +14,7 @@ from aios.core.executions import (
 
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("run", help="Manage semi-automatic task execution.")
-    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `status` / `finish`.")
+    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `status` / `finish`.")
     parser.add_argument("task_id", nargs="?", help="Task ID for status / finish mode.")
     parser.add_argument("--manual", action="store_true", help="Prepare one manual execution.")
     parser.add_argument("--executor", default=None, help="Run one configured executor.")
@@ -30,6 +31,46 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
+    if args.run_target == "auto":
+        result = auto_dispatch_next_task(
+            root,
+            executor_id=args.executor,
+            model=args.model,
+            refresh_pack=args.refresh_pack,
+            note=args.note,
+        )
+        if not result["dispatched"]:
+            print(f"Auto dispatch skipped: {result['reason']}")
+            if result["executor"]:
+                print(f"Default executor: {result['executor']['id']}")
+            next_task = result["scheduler_before"].get("next_task_id")
+            next_action = result["scheduler_before"].get("next_action")
+            if next_task or next_action:
+                print(f"Scheduler next: {next_task or '-'} [{next_action or '-'}]")
+            return
+        execution = result["execution"]
+        route = result["route"]
+        handoff = result["handoff"]
+        scheduler_item = result["scheduler_item"]
+        print(f"Dispatched task: {result['task']['id']} {result['task']['title']}")
+        print(f"Execution: {execution['execution_id']}")
+        print(f"Executor: {result['executor']['id']}")
+        print(f"Status: {execution['status']}")
+        print(f"Planned model: {execution['planned_model']}")
+        print(f"Fallback models: {', '.join(route['fallback_models']) or '-'}")
+        print(f"Context pack: {handoff['pack_path']}")
+        print(f"Handoff: {handoff['handoff_path']}")
+        print(f"Scheduler reason: {scheduler_item['reason']}")
+        if execution.get("executor_command"):
+            print(f"Command: {execution['executor_command']}")
+        if execution.get("executor_log_path"):
+            print(f"Log: {execution['executor_log_path']}")
+        if execution["status"] == "review_pending":
+            print("Next: review the generated changes and use `aios run finish` to accept the task.")
+        elif execution["status"] == "failed":
+            print("Next: inspect the execution log, then retry manually or dispatch another ready task later.")
+        return
+
     if args.run_target == "status":
         if not args.task_id:
             raise ValueError("Task ID is required for `aios run status`.")
@@ -95,7 +136,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         return
 
     if not args.manual:
-        raise ValueError("Use `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
+        raise ValueError("Use `aios run auto [--executor ...]`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
 
     result = prepare_manual_execution(
         root,

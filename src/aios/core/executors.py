@@ -93,6 +93,16 @@ def get_executor(root: Path | None, executor_id: str) -> dict:
     raise ValueError(f"Executor not found: {executor_id}")
 
 
+def get_default_executor(root: Path | None = None) -> dict:
+    executors = [item for item in load_executor_library(root) if item.get("enabled", True)]
+    for executor in executors:
+        if executor.get("kind") == "command":
+            return executor
+    if executors:
+        return executors[0]
+    raise ValueError("No enabled executor is available.")
+
+
 def create_executor(
     root: Path | None,
     executor_id: str,

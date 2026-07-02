@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-2`，核心功能包括：
+当前版本已交付到 `P3-7`，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -17,6 +17,7 @@
 - `P3-4` 任务树与拆解草案已落地首版 CLI / API / Web 预览能力
 - `P3-5` Context Engine 补强已落地首版分层 Pack 与质量校验
 - `P3-6` 执行总览增强已落地首版调度摘要与下一步动作提示
+- `P3-7` 自动调度执行链路原型已落地首版 CLI / API / Web 派发能力
 
 已知短板：
 
@@ -24,7 +25,8 @@
 - 尚未自动调用 Codex / Claude Code CLI
 - 任务拆解仍偏平面，缺少草案确认和依赖表达
 - Context Pack 还缺分层与质量校验
-- launcher 只能看到执行摘要，还看不到完整执行全貌
+- 自动派发后仍需人工 review 和 finish
+- 自动化还没有接管 `ccswitch` 和真实会话切换
 
 ---
 
@@ -71,8 +73,10 @@
 | P3-4 | 任务树与拆解草案 | 支持父子任务、依赖关系、拆解草案确认；Web UI 可修改后再写入 |
 | P3-5 | Context Engine 补强 | Pack 分层、token 预估、相关文件筛选和 Pack 质量校验落地 |
 | P3-6 | 执行总览增强 | launcher 和单项目页可显示执行器、最近测试、失败摘要、最近交付时间 |
-| P3-7 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
-| P3-8 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
+| P3-7 | 自动调度执行链路原型 | `aios run auto` / `/api/run/dispatch` 能按调度结果自动派发下一条 `ready` 任务 |
+| P3-8 | 自动完成收口 | review 通过后支持统一 finish 收口策略，减少人工回写步骤 |
+| P3-9 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
+| P3-10 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
 
 ### P4 — 平台化
 
@@ -87,9 +91,9 @@
 
 ## 近期重点（接下来 2 周）
 
-1. P3-6：把调度摘要真正接入自动执行排序
+1. P3-8：设计并验证自动完成收口规则
 2. P3-4：补齐任务树可视化和更细粒度编辑
-3. P3-5：把 Pack 质量结果纳入自动执行前检查
+3. P3-5：继续增强 Pack 质量结果对执行前检查的约束
 4. P0-2：持续同步操作手册与规划文档
 5. P1：继续收口易用性细节
 
@@ -97,9 +101,9 @@
 
 下一阶段默认进入“执行适配 + 拆解增强 + Context 补强”三件套，目标是：
 
-- 在不破坏现有半自动流程的前提下，先把执行器接口抽象出来
-- 先解决复杂目标拆解过浅的问题，而不是急着堆自动化
-- 先把 Pack 做稳，再扩大自动执行范围
+- 在不破坏现有半自动流程的前提下，把自动派发与自动收口逐步接上
+- 继续解决复杂目标拆解过浅的问题，而不是只堆执行入口
+- 先把 Pack 和调度判定做稳，再扩大自动执行范围
 
 专项规划见 [docs/plans/aios-system-improvement-roadmap.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/plans/aios-system-improvement-roadmap.md)。
 
@@ -116,3 +120,4 @@
 | 2026-07-01 | `run` 成为半自动执行主入口 | `handoff` 只适合生成交接文档，不适合承载执行状态机 |
 | 2026-07-01 | `ccswitch` 先做适配输出，不直接做自动控制 | 先标准化导出，再评估稳定 CLI 或自动切换能力 |
 | 2026-07-02 | 下一阶段优先补执行器适配、任务树、Context Engine | 这三项直接对应当前最大痛点，也最能放大 AIOS 的管理价值 |
+| 2026-07-02 | 自动调度先只派发 `ready` 任务，不自动 finish | 先把调度决策接入执行链路，再逐步扩到 review 收口 |

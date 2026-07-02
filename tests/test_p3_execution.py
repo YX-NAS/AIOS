@@ -258,6 +258,37 @@ def test_run_executor_cli_executes_command_and_marks_review_pending(tmp_path: Pa
     assert updated_task["status"] == "running"
 
 
+def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "scan"])
+    main(["--root", str(tmp_path), "task", "plan", "开发会员积分系统", "--priority", "high"])
+    create_executor(
+        None,
+        "dispatch-cli",
+        label="Dispatch CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('dispatch ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+
+    assert main(["--root", str(tmp_path), "run", "auto", "--executor", "dispatch-cli"]) == 0
+
+    executions = load_executions(tmp_path)
+    assert len(executions) == 1
+    execution = executions[0]
+    assert execution["task_title"] == "梳理系统范围与模块边界：会员积分系统"
+    assert execution["status"] == "review_pending"
+
+
 def test_run_execute_api_reports_failed_executor(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_executor(
@@ -288,6 +319,47 @@ def test_run_execute_api_reports_failed_executor(tmp_path: Path, monkeypatch) ->
         assert status_code == 201
         assert payload["execution"]["status"] == "failed"
         assert payload["execution"]["executor_exit_code"] == 2
+    finally:
+        handle.close()
+
+
+def test_run_dispatch_api_returns_noop_when_review_pending_exists(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "dispatch-api-cli",
+        label="Dispatch API CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "dispatch-api-cli"},
+        )
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={},
+        )
+        assert status_code == 201
+        assert payload["dispatched"] is False
+        assert "待复核" in payload["reason"]
     finally:
         handle.close()
 

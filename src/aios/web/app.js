@@ -45,6 +45,7 @@ const elements = {
   taskPagination: document.getElementById("taskPagination"),
   packPagination: document.getElementById("packPagination"),
   scanButton: document.getElementById("scanButton"),
+  dispatchNextButton: document.getElementById("dispatchNextButton"),
   startExecutionButton: document.getElementById("startExecutionButton"),
   exportCcswitchButton: document.getElementById("exportCcswitchButton"),
   copyCcswitchButton: document.getElementById("copyCcswitchButton"),
@@ -582,6 +583,23 @@ elements.startExecutionButton.addEventListener("click", async () => {
     await copyText(data.handoff.content);
     setActivity(`已开始执行 ${data.task.id}。\n模型：${data.execution.planned_model}\n交接单已复制：${data.handoff.handoff_path}`);
   }, "开始执行失败。");
+});
+
+elements.dispatchNextButton.addEventListener("click", async () => {
+  await runAction(async () => {
+    const data = await api("/api/run/dispatch", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    await refreshDashboard();
+    if (!data.dispatched) {
+      setActivity(`未派发任务：${data.reason}`);
+      return;
+    }
+    state.selectedTaskId = data.task.id;
+    await loadTaskInspector();
+    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}`);
+  }, "自动派发下一任务失败。");
 });
 
 elements.exportCcswitchButton.addEventListener("click", async () => {
