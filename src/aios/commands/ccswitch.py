@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from aios.core.ccswitch import export_ccswitch_payload, export_payload_as_text
+from aios.core.ccswitch import build_ccswitch_deeplink, export_ccswitch_payload, export_payload_as_text
 
 
 def add_ccswitch_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -15,15 +15,33 @@ def add_ccswitch_parser(subparsers: argparse._SubParsersAction) -> None:
     export.add_argument("--model", default=None, help="Optional export model override.")
     export.add_argument("--stdout", action="store_true", help="Also print the JSON payload to stdout.")
 
+    deeplink = ccswitch_subparsers.add_parser("deeplink", help="Generate one ccswitch prompt deeplink.")
+    deeplink.add_argument("task_id")
+    deeplink.add_argument("--app", default="codex", help="Target app for ccswitch deeplink. Defaults to codex.")
+    deeplink.add_argument("--model", default=None, help="Optional model override used in the handoff description.")
+    deeplink.add_argument("--open", action="store_true", help="Open the deeplink with the local OS.")
+    deeplink.add_argument("--stdout", action="store_true", help="Also print the deeplink URL to stdout.")
+
 
 def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
-    if args.ccswitch_command != "export":
-        raise ValueError("Unsupported ccswitch command.")
+    if args.ccswitch_command == "export":
+        result = export_ccswitch_payload(root, args.task_id, model=args.model)
+        print(f"Exported {result['export_path']}")
+        print(f"Task: {result['task']['id']} {result['task']['title']}")
+        print(f"Planned model: {result['payload']['planned_model']}")
+        print(f"Export model: {result['payload']['export_model']}")
+        if args.stdout:
+            print(export_payload_as_text(result["payload"]).rstrip())
+        return
 
-    result = export_ccswitch_payload(root, args.task_id, model=args.model)
-    print(f"Exported {result['export_path']}")
-    print(f"Task: {result['task']['id']} {result['task']['title']}")
-    print(f"Planned model: {result['payload']['planned_model']}")
-    print(f"Export model: {result['payload']['export_model']}")
-    if args.stdout:
-        print(export_payload_as_text(result["payload"]).rstrip())
+    if args.ccswitch_command == "deeplink":
+        result = build_ccswitch_deeplink(root, args.task_id, app=args.app, model=args.model, open_link=bool(args.open))
+        print(f"Generated deeplink for {result['app']}")
+        print(f"Task: {result['task']['id']} {result['task']['title']}")
+        if result["opened"]:
+            print(f"Opened at: {result['opened_at']}")
+        if args.stdout:
+            print(result["deeplink"])
+        return
+
+    raise ValueError("Unsupported ccswitch command.")

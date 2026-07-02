@@ -194,6 +194,22 @@ def test_ccswitch_export_cli_stdout_outputs_json(tmp_path: Path, capsys) -> None
     assert '"export_model"' in output
 
 
+def test_ccswitch_deeplink_cli_outputs_url_and_records_execution(tmp_path: Path, capsys) -> None:
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "deeplink", task["id"], "--app", "codex", "--stdout"]) == 0
+    output = capsys.readouterr().out
+    assert "ccswitch://v1/import?" in output
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["ccswitch_deeplink"].startswith("ccswitch://v1/import?")
+    assert execution["ccswitch_deeplink_app"] == "codex"
+
+
 def test_ccswitch_export_api_updates_execution_without_overwriting_planned_model(tmp_path: Path) -> None:
     handle = start_web_server(tmp_path, port=0)
     try:
@@ -214,6 +230,28 @@ def test_ccswitch_export_api_updates_execution_without_overwriting_planned_model
         assert export_payload["execution"]["planned_model"] == task["recommended_model"]
         assert export_payload["execution"]["ccswitch_export_model"] == "claude"
         assert (tmp_path / export_payload["export_path"]).exists()
+    finally:
+        handle.close()
+
+
+def test_ccswitch_deeplink_api_returns_prompt_link(tmp_path: Path) -> None:
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(handle.url, "/api/run/manual", method="POST", payload={"task_id": task["id"], "start": True})
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/ccswitch/deeplink",
+            method="POST",
+            payload={"task_id": task["id"], "app": "codex"},
+        )
+        assert status_code == 201
+        assert payload["app"] == "codex"
+        assert payload["deeplink"].startswith("ccswitch://v1/import?")
+        assert payload["execution"]["ccswitch_deeplink_app"] == "codex"
     finally:
         handle.close()
 

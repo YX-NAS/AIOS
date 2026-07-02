@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from aios.core.ccswitch import export_ccswitch_payload
+from aios.core.ccswitch import build_ccswitch_deeplink, export_ccswitch_payload
 from aios.core.context_builder import build_context_pack
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
@@ -238,6 +238,21 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "export_path": result["export_path"],
                             "payload": result["payload"],
                             "execution": result["execution"],
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/ccswitch/deeplink":
+                    result = build_ccswitch_deeplink(
+                        self.project_root,
+                        payload["task_id"],
+                        app=(payload.get("app") or "codex").strip() or "codex",
+                        model=(payload.get("model") or "").strip() or None,
+                        open_link=bool(payload.get("open")),
+                    )
+                    return self._send_json(
+                        {
+                            "message": "ccswitch deeplink generated.",
+                            **result,
                         },
                         status=HTTPStatus.CREATED,
                     )

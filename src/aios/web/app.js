@@ -48,6 +48,7 @@ const elements = {
   dispatchNextButton: document.getElementById("dispatchNextButton"),
   startExecutionButton: document.getElementById("startExecutionButton"),
   exportCcswitchButton: document.getElementById("exportCcswitchButton"),
+  copyCcswitchDeeplinkButton: document.getElementById("copyCcswitchDeeplinkButton"),
   copyCcswitchButton: document.getElementById("copyCcswitchButton"),
   copyCurrentPackButton: document.getElementById("copyCurrentPackButton"),
   copyHandoffButton: document.getElementById("copyHandoffButton"),
@@ -351,9 +352,11 @@ function renderExecution(task, execution) {
     <div class="muted">实际模型：${execution.actual_model || "-"}</div>
     <div class="muted">自动提交：${execution.auto_commit_status || "-"}</div>
     <div class="muted">最近导出模型：${execution.ccswitch_export_model || "-"}</div>
+    <div class="muted">Deep Link 应用：${execution.ccswitch_deeplink_app || "-"}</div>
     <div class="muted">Pack：${execution.pack_path || "-"}</div>
     <div class="muted">Handoff：${execution.handoff_path || "-"}</div>
     <div class="muted">ccswitch 导出：${execution.ccswitch_export_path || "-"}</div>
+    <div class="muted">ccswitch Deep Link：${execution.ccswitch_deeplink ? "已生成" : "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
@@ -641,6 +644,22 @@ elements.exportCcswitchButton.addEventListener("click", async () => {
     await refreshDashboard();
     setActivity(`已导出 ccswitch 适配文件：${data.export_path}\n导出模型：${data.payload.export_model}`);
   }, "导出 ccswitch 适配文件失败。");
+});
+
+elements.copyCcswitchDeeplinkButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/ccswitch/deeplink", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, app: "codex" }),
+    });
+    await copyText(data.deeplink);
+    await refreshDashboard();
+    setActivity(`已复制 ccswitch Deep Link。\n目标应用：${data.app}`);
+  }, "复制 ccswitch Deep Link 失败。");
 });
 
 elements.copyCcswitchButton.addEventListener("click", async () => {

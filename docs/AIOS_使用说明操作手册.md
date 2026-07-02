@@ -872,6 +872,20 @@ aios --root /path/to/project ccswitch export TASK-ID
 4. 在 `ccswitch` 中手动切换到 `export_model`
 5. 按 JSON 里的路径去打开 Context Pack 或交接单继续执行
 
+如果你希望少一步手工复制粘贴，也可以直接生成 Deep Link：
+
+```bash
+aios --root /path/to/project ccswitch deeplink TASK-ID --app codex --stdout
+```
+
+如果本机已经安装并注册了 CC Switch Deep Link，也可以直接尝试打开：
+
+```bash
+aios --root /path/to/project ccswitch deeplink TASK-ID --app codex --open
+```
+
+这会生成一个 `ccswitch://v1/import?...` 链接，把当前任务 handoff 作为 prompt 资源导入 CC Switch。
+
 它当前解决的是：
 
 - 不用手抄模型名
@@ -881,6 +895,7 @@ aios --root /path/to/project ccswitch export TASK-ID
 它当前还不能做的是：
 
 - 不能直接自动控制 `ccswitch`
+- 目前只是 prompt 级 Deep Link 导入，还不是 provider / 会话级自动切换
 - 不能自动打开 Codex 或 Claude Code
 
 ## 11. 当前版本边界说明
