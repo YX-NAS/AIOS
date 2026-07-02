@@ -118,6 +118,10 @@ def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
         print(f"App: {result['bridge']['app']}")
         print(f"Model: {result['bridge']['model']}")
         print(f"Mode: {result['bridge']['bridge_mode']}")
+        print(f"Status: {result['bridge']['bridge_status']}")
+        print(f"Last step: {result['bridge'].get('bridge_last_step') or '-'}")
+        if result["bridge"].get("bridge_error"):
+            print(f"Error: {result['bridge']['bridge_error']}")
         if result["opened"]:
             print(f"Opened at: {result['opened_at']}")
         if args.stdout:

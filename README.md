@@ -21,6 +21,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 执行会话自动识别方案见 [docs/P3_17_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_17_DESIGN.md)。
 终端继续执行方案见 [docs/P3_18_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_18_DESIGN.md)。
 `ccswitch` 桥接层方案见 [docs/P3_19_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_19_DESIGN.md)。
+桥接结果可观测层方案见 [docs/P3_20_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_20_DESIGN.md)。
 
 ## MVP 边界
 
@@ -62,6 +63,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 - `aios run attach TASK-ID` / `aios run resume TASK-ID` 可把真实执行会话挂接到任务上，并生成恢复命令
 - `aios run resume TASK-ID --open-terminal` 可直接在 macOS Terminal 打开恢复命令
 - `aios ccswitch bridge TASK-ID --open` 可在 macOS 上把 provider 导入、prompt 导入和终端恢复串成一条桥接动作
+- bridge 现在会记录每一步的状态、失败步骤和错误信息，便于后续重试和自动化确认
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 

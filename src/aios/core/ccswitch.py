@@ -23,6 +23,7 @@ FORMAT_VERSION = "1"
 SESSION_HANDOFF_VERSION = "1"
 BRIDGE_VERSION = "1"
 SUPPORTED_APPS = {"claude", "codex", "gemini", "opencode", "openclaw"}
+BRIDGE_SUCCESS_STATUSES = {"completed", "prepared"}
 
 
 def export_ccswitch_payload(root: Path, task_id: str, model: str | None = None) -> dict:
@@ -232,6 +233,11 @@ def build_ccswitch_bridge(
         "provider": session_handoff["handoff"]["provider"],
         "project_root": str(root),
         "bridge_mode": mode,
+        "bridge_status": "prepared",
+        "bridge_last_step": None,
+        "bridge_error": None,
+        "bridge_started_at": None,
+        "bridge_finished_at": None,
         "delay_ms": delay_ms,
         "terminal_app": terminal_app,
         "provider_deeplink": session_handoff["handoff"]["provider_deeplink"],
@@ -240,11 +246,11 @@ def build_ccswitch_bridge(
         "session_ref": resume_payload.get("session_ref"),
         "session_handoff_path": session_handoff["handoff_path"],
         "steps": [
-            {"type": "deeplink", "label": "provider", "value": session_handoff["handoff"]["provider_deeplink"]},
-            {"type": "wait", "label": "provider_delay_ms", "value": delay_ms},
-            {"type": "deeplink", "label": "prompt", "value": session_handoff["handoff"]["prompt_deeplink"]},
-            {"type": "wait", "label": "prompt_delay_ms", "value": delay_ms},
-            {"type": "terminal_command", "label": mode, "value": resume_payload["command"]},
+            _build_bridge_step("deeplink", "provider", session_handoff["handoff"]["provider_deeplink"]),
+            _build_bridge_step("wait", "provider_delay_ms", delay_ms),
+            _build_bridge_step("deeplink", "prompt", session_handoff["handoff"]["prompt_deeplink"]),
+            _build_bridge_step("wait", "prompt_delay_ms", delay_ms),
+            _build_bridge_step("terminal_command", mode, resume_payload["command"]),
         ],
         "exported_at": exported_at,
     }
@@ -253,8 +259,10 @@ def build_ccswitch_bridge(
     if open_bundle:
         if sys.platform != "darwin":
             raise ValueError("Opening the full ccswitch bridge is currently supported on macOS only.")
-        _open_ccswitch_bridge(payload)
-        opened_at = now_iso()
+        payload = _open_ccswitch_bridge(payload)
+        write_json(export_path, payload)
+        if payload.get("bridge_status") == "completed":
+            opened_at = payload.get("bridge_finished_at") or now_iso()
     updated_execution = _record_bridge(
         root,
         execution["execution_id"],
@@ -262,6 +270,11 @@ def build_ccswitch_bridge(
         normalized_app,
         mode,
         terminal_app,
+        payload["bridge_status"],
+        payload.get("bridge_last_step"),
+        payload.get("bridge_error"),
+        payload.get("bridge_started_at"),
+        payload.get("bridge_finished_at"),
         opened_at,
     )
     return {
@@ -450,6 +463,11 @@ def _record_bridge(
     app: str,
     mode: str,
     terminal_app: str,
+    status: str,
+    last_step: str | None,
+    error: str | None,
+    started_at: str | None,
+    finished_at: str | None,
     opened_at: str | None,
 ) -> dict:
     executions = load_executions(root)
@@ -461,6 +479,11 @@ def _record_bridge(
         item["ccswitch_bridge_app"] = app
         item["ccswitch_bridge_mode"] = mode
         item["ccswitch_bridge_terminal_app"] = terminal_app
+        item["ccswitch_bridge_status"] = status
+        item["ccswitch_bridge_last_step"] = last_step
+        item["ccswitch_bridge_error"] = error
+        item["ccswitch_bridge_started_at"] = started_at
+        item["ccswitch_bridge_finished_at"] = finished_at
         item["ccswitch_bridge_generated_at"] = generated_at
         if opened_at:
             item["ccswitch_bridge_opened_at"] = opened_at
@@ -470,15 +493,57 @@ def _record_bridge(
     raise ValueError(f"Execution not found: {execution_id}")
 
 
-def _open_ccswitch_bridge(payload: dict) -> None:
-    delay_seconds = max(int(payload.get("delay_ms") or 0), 0) / 1000
-    open_ccswitch_deeplink(payload["provider_deeplink"])
-    if delay_seconds:
-        time.sleep(delay_seconds)
-    open_ccswitch_deeplink(payload["prompt_deeplink"])
-    if delay_seconds:
-        time.sleep(delay_seconds)
-    launch_command_in_terminal(payload["resume_command"], app=str(payload.get("terminal_app") or "Terminal"))
+def _open_ccswitch_bridge(payload: dict) -> dict:
+    bridge = json.loads(json.dumps(payload))
+    bridge["bridge_status"] = "running"
+    bridge["bridge_started_at"] = now_iso()
+    delay_seconds = max(int(bridge.get("delay_ms") or 0), 0) / 1000
+    try:
+        _run_bridge_step(bridge, 0, lambda: open_ccswitch_deeplink(bridge["provider_deeplink"]))
+        _run_bridge_step(bridge, 1, lambda: time.sleep(delay_seconds) if delay_seconds else None)
+        _run_bridge_step(bridge, 2, lambda: open_ccswitch_deeplink(bridge["prompt_deeplink"]))
+        _run_bridge_step(bridge, 3, lambda: time.sleep(delay_seconds) if delay_seconds else None)
+        _run_bridge_step(
+            bridge,
+            4,
+            lambda: launch_command_in_terminal(bridge["resume_command"], app=str(bridge.get("terminal_app") or "Terminal")),
+        )
+    except Exception as exc:
+        bridge["bridge_status"] = "failed"
+        bridge["bridge_error"] = str(exc)
+        bridge["bridge_finished_at"] = now_iso()
+        return bridge
+    bridge["bridge_status"] = "completed"
+    bridge["bridge_finished_at"] = now_iso()
+    return bridge
+
+
+def _build_bridge_step(step_type: str, label: str, value: str | int) -> dict:
+    return {
+        "type": step_type,
+        "label": label,
+        "value": value,
+        "status": "pending",
+        "started_at": None,
+        "finished_at": None,
+        "error": None,
+    }
+
+
+def _run_bridge_step(bridge: dict, index: int, action) -> None:
+    step = bridge["steps"][index]
+    step["status"] = "running"
+    step["started_at"] = now_iso()
+    bridge["bridge_last_step"] = step["label"]
+    try:
+        action()
+    except Exception as exc:
+        step["status"] = "failed"
+        step["error"] = str(exc)
+        step["finished_at"] = now_iso()
+        raise
+    step["status"] = "completed"
+    step["finished_at"] = now_iso()
 
 
 def _resolve_task_execution(root: Path, task_id: str, app: str, model: str | None) -> tuple[dict, dict, str, str]:

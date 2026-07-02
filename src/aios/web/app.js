@@ -379,6 +379,9 @@ function renderExecution(task, execution) {
     <div class="muted">Session Handoff：${execution.ccswitch_session_handoff_path || "-"}</div>
     <div class="muted">Bridge：${execution.ccswitch_bridge_path || "-"}</div>
     <div class="muted">Bridge 模式：${execution.ccswitch_bridge_mode || "-"}</div>
+    <div class="muted">Bridge 状态：${execution.ccswitch_bridge_status || "-"}</div>
+    <div class="muted">Bridge 最后步骤：${execution.ccswitch_bridge_last_step || "-"}</div>
+    <div class="muted">Bridge 错误：${execution.ccswitch_bridge_error || "-"}</div>
     <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>
     <div class="muted">会话来源：${execution.executor_session_auto_captured ? `自动提取 (${execution.executor_session_capture_source || "-"})` : (execution.executor_session_attached_at ? "手动挂接" : "-")}</div>
     <div class="muted">恢复命令：${execution.executor_resume_command || execution.executor_resume_last_command || "-"}</div>
@@ -746,7 +749,9 @@ elements.runCcswitchBridgeButton.addEventListener("click", async () => {
       body: JSON.stringify({ task_id: state.selectedTaskId, app: "codex", open: true }),
     });
     await refreshDashboard();
-    setActivity(`已启动桥接执行。\n文件：${data.bridge_path}\n模式：${data.bridge.bridge_mode}\n模型：${data.bridge.model}`);
+    const stepSummary = (data.bridge.steps || []).map((step) => `${step.label}:${step.status}`).join(" | ");
+    const errorLine = data.bridge.bridge_error ? `\n错误：${data.bridge.bridge_error}` : "";
+    setActivity(`已启动桥接执行。\n文件：${data.bridge_path}\n模式：${data.bridge.bridge_mode}\n状态：${data.bridge.bridge_status}\n步骤：${stepSummary}${errorLine}`);
   }, "启动 ccswitch 桥接执行失败。");
 });
 

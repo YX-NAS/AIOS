@@ -512,13 +512,20 @@ def test_ccswitch_bridge_cli_exports_and_opens_sequence(tmp_path: Path, monkeypa
     assert bridge_path.exists()
     payload = json.loads(bridge_path.read_text(encoding="utf-8"))
     assert payload["bridge_mode"] == "attached"
+    assert payload["bridge_status"] == "completed"
+    assert payload["bridge_last_step"] == "attached"
+    assert payload["bridge_error"] is None
     assert payload["provider_deeplink"].startswith("ccswitch://v1/import?")
     assert payload["prompt_deeplink"].startswith("ccswitch://v1/import?")
     assert "codex resume session-123" in payload["resume_command"]
+    assert [step["status"] for step in payload["steps"]] == ["completed", "completed", "completed", "completed", "completed"]
     assert len(opened_links) == 2
     assert len(launched_commands) == 1
     assert launched_commands[0][1] == "Terminal"
     assert delays == [1.2, 1.2]
+    assert execution["ccswitch_bridge_status"] == "completed"
+    assert execution["ccswitch_bridge_last_step"] == "attached"
+    assert execution["ccswitch_bridge_error"] is None
 
 
 def test_ccswitch_provider_and_session_api_return_auditable_payloads(tmp_path: Path, monkeypatch) -> None:
@@ -619,13 +626,62 @@ def test_ccswitch_bridge_api_returns_bundle_and_audits_execution(tmp_path: Path,
         )
         assert status_code == 201
         assert bridge_payload["bridge"]["bridge_mode"] == "attached"
+        assert bridge_payload["bridge"]["bridge_status"] == "completed"
         assert bridge_payload["opened"] is True
         assert bridge_payload["execution"]["ccswitch_bridge_app"] == "codex"
+        assert bridge_payload["execution"]["ccswitch_bridge_status"] == "completed"
         assert (tmp_path / bridge_payload["bridge_path"]).exists()
         assert len(opened_links) == 2
         assert launched_commands[0][1] == "Terminal"
     finally:
         handle.close()
+
+
+def test_ccswitch_bridge_marks_failed_step_when_prompt_import_fails(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    calls: list[str] = []
+
+    def flaky_open(deeplink: str) -> None:
+        calls.append(deeplink)
+        if len(calls) == 2:
+            raise ValueError("prompt import failed")
+
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", flaky_open)
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: None)
+
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--model", "gpt-5.5-coder", "--start"])
+    main(["--root", str(tmp_path), "run", "attach", task["id"], "--executor", "codex-cli", "--session-id", "session-123"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "bridge", task["id"], "--open"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["ccswitch_bridge_status"] == "failed"
+    assert execution["ccswitch_bridge_last_step"] == "prompt"
+    assert execution["ccswitch_bridge_error"] == "prompt import failed"
+    payload = json.loads((tmp_path / execution["ccswitch_bridge_path"]).read_text(encoding="utf-8"))
+    assert payload["bridge_status"] == "failed"
+    assert payload["bridge_error"] == "prompt import failed"
+    assert payload["steps"][0]["status"] == "completed"
+    assert payload["steps"][2]["status"] == "failed"
+    assert payload["steps"][4]["status"] == "pending"
 
 
 def test_run_attach_and_resume_api_returns_session_commands(tmp_path: Path) -> None:
