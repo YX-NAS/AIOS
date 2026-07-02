@@ -9,6 +9,7 @@ from aios.core.executors import (
     build_executor_command,
     executor_supports_session_resume,
     extract_executor_session_ref,
+    get_available_executor,
     get_executor,
     resume_shell_preview,
     shell_preview,
@@ -119,7 +120,7 @@ def run_executor_execution(
     refresh_pack: bool = False,
     note: str | None = None,
 ) -> dict:
-    executor = get_executor(None, executor_id)
+    executor = get_available_executor(None, executor_id)
     if not executor.get("enabled", True):
         raise ValueError(f"Executor is disabled: {executor_id}")
     if executor.get("kind") == "manual":

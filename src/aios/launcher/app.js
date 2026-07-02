@@ -92,6 +92,10 @@ function renderProjects() {
               <div class="metric-label">启用模型</div>
             </div>
             <div class="metric-tile">
+              <div class="metric-value">${project.available_executor_count || 0}</div>
+              <div class="metric-label">可用执行器</div>
+            </div>
+            <div class="metric-tile">
               <div class="metric-value">${project.active_execution_count}</div>
               <div class="metric-label">活跃执行</div>
             </div>

@@ -543,7 +543,26 @@ aios --root /path/to/project run sessions TASK-20260701-001
 
 当前版本里，单项目 Web UI 的任务检查器也会显示“历史会话候选”，并支持一键挂接。
 
-### 第 7.8 步：一键桥接到 `ccswitch` 和终端
+### 第 7.8 步：检查执行器是否真实可用
+
+在开启自动派发前，建议先检查本机 CLI 是否真的可用：
+
+```bash
+aios executor doctor
+aios executor doctor codex-cli
+```
+
+你会看到：
+
+- binary 路径
+- healthcheck 命令
+- healthcheck 输出
+- 当前是否 available
+
+从当前版本开始，`aios run auto` 只会选择真实可用的命令型执行器。  
+如果执行器不可用，AIOS 会停止自动派发，并提示先做 doctor 检查。
+
+### 第 7.9 步：一键桥接到 `ccswitch` 和终端
 
 如果你希望把 provider 导入、prompt 导入、终端恢复三步收成一次动作，可以用：
 

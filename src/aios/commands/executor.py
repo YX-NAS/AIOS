@@ -7,6 +7,7 @@ from pathlib import Path
 from aios.core.executors import (
     create_executor,
     delete_executor,
+    executor_runtime_status,
     executor_summary,
     get_executor,
     reset_executor_library,
@@ -34,6 +35,8 @@ def add_executor_parser(subparsers: argparse._SubParsersAction) -> None:
     delete.add_argument("executor_id")
 
     executor_subparsers.add_parser("reset", help="Reset executor library to defaults.")
+    doctor = executor_subparsers.add_parser("doctor", help="Check executor runtime availability.")
+    doctor.add_argument("executor_id", nargs="?", default=None)
 
 
 def run_executor(root: Path, args: argparse.Namespace) -> None:
@@ -41,7 +44,9 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
         summary = executor_summary()
         for executor in summary["executors"]:
             status = "enabled" if executor["enabled"] else "disabled"
-            print(f"{executor['id']} [{executor['kind']}] {status} rank={executor['rank']} label={executor['label']}")
+            runtime = executor.get("runtime") or {}
+            availability = "available" if runtime.get("available") else "unavailable"
+            print(f"{executor['id']} [{executor['kind']}] {status} {availability} rank={executor['rank']} label={executor['label']}")
         return
 
     if args.executor_command == "show":
@@ -67,6 +72,7 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
             resume_in_project_root=not args.no_resume_project_root,
             session_ref_label=args.session_ref_label,
             session_capture_patterns=_parse_session_capture_patterns(args.session_capture_pattern or []),
+            healthcheck_args=args.healthcheck_arg or [],
         )
         print(f"Created executor: {executor['id']}")
         return
@@ -91,6 +97,7 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
             resume_in_project_root=not args.no_resume_project_root,
             session_ref_label=args.session_ref_label,
             session_capture_patterns=_parse_session_capture_patterns(args.session_capture_pattern or []),
+            healthcheck_args=args.healthcheck_arg or [],
         )
         print(f"Updated executor: {executor['id']}")
         return
@@ -103,6 +110,24 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
     if args.executor_command == "reset":
         executors = reset_executor_library()
         print(f"Reset executor library with {len(executors)} executors.")
+        return
+
+    if args.executor_command == "doctor":
+        summary = executor_summary()
+        executors = summary["executors"]
+        if args.executor_id:
+            executors = [item for item in executors if item["id"] == args.executor_id]
+            if not executors:
+                raise ValueError(f"Executor not found: {args.executor_id}")
+        for executor in executors:
+            runtime = executor.get("runtime") or executor_runtime_status(executor)
+            print(f"{executor['id']}: {'available' if runtime.get('available') else 'unavailable'}")
+            print(f"  binary: {executor.get('binary') or '-'}")
+            print(f"  path: {runtime.get('binary_path') or '-'}")
+            print(f"  healthcheck: {runtime.get('healthcheck_status') or '-'}")
+            print(f"  command: {runtime.get('healthcheck_command') or '-'}")
+            print(f"  output: {runtime.get('healthcheck_output') or '-'}")
+            print(f"  reason: {runtime.get('reason') or '-'}")
         return
 
 
@@ -125,6 +150,7 @@ def _add_mutation_arguments(parser: argparse.ArgumentParser, create_mode: bool) 
     parser.add_argument("--no-resume-project-root", action="store_true", help="Do not wrap resume commands with project root cd.")
     parser.add_argument("--session-ref-label", default=None, help="Human label for attached session reference.")
     parser.add_argument("--session-capture-pattern", action="append", default=[], help="Repeatable session capture rule: source:regex or regex.")
+    parser.add_argument("--healthcheck-arg", action="append", default=[], help="Repeatable healthcheck argument, for example: --healthcheck-arg=--version")
 
 
 def _parse_env_pairs(pairs: list[str]) -> dict[str, str]:

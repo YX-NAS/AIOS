@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 import aios.core.ccswitch as ccswitch_core
+import aios.core.executors as executors_core
 import aios.core.terminal_resume as terminal_resume
 from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import build_execution_resume, latest_execution_for_task, load_executions
@@ -194,6 +195,26 @@ def test_executor_library_defaults_include_resume_templates() -> None:
     assert codex["resume_args"] == ["resume", "{session_ref}"]
     assert codex["continue_args"] == ["resume", "--last"]
     assert claude["resume_args"] == ["--resume", "{session_ref}"]
+
+
+def test_executor_summary_reports_runtime_availability(monkeypatch) -> None:
+    monkeypatch.setattr(executors_core.shutil, "which", lambda binary: f"/usr/local/bin/{binary}" if binary == "codex" else None)
+
+    def fake_run(command, capture_output, text, timeout, check):
+        class Result:
+            returncode = 0
+            stdout = "codex 1.2.3"
+            stderr = ""
+        return Result()
+
+    monkeypatch.setattr(executors_core.subprocess, "run", fake_run)
+    summary = executors_core.executor_summary()
+    codex = next(item for item in summary["executors"] if item["id"] == "codex-cli")
+    claude = next(item for item in summary["executors"] if item["id"] == "claude-code-cli")
+    assert codex["runtime"]["available"] is True
+    assert codex["runtime"]["healthcheck_status"] == "ok"
+    assert claude["runtime"]["available"] is False
+    assert summary["available_executor_count"] >= 1
     assert claude["continue_args"] == ["--continue"]
 
 
@@ -1080,6 +1101,21 @@ def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -
     assert execution["status"] == "review_pending"
 
 
+def test_run_auto_cli_reports_unavailable_executor_pool(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setattr(executors_core.shutil, "which", lambda binary: None)
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "scan"])
+    main(["--root", str(tmp_path), "task", "plan", "开发会员积分系统", "--priority", "high"])
+
+    assert main(["--root", str(tmp_path), "run", "auto"]) == 0
+    output = capsys.readouterr().out
+    assert "当前没有可用的命令型执行器" in output
+
+
 def test_run_auto_cli_can_auto_confirm_bridge_signal(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_model(
@@ -1752,6 +1788,23 @@ def test_executor_library_cli_lists_defaults(tmp_path: Path, monkeypatch, capsys
     assert "manual [manual]" in output
     assert "codex-cli [command]" in output
     assert load_executor_library()
+
+
+def test_executor_doctor_cli_reports_runtime(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(executors_core.shutil, "which", lambda binary: f"/usr/local/bin/{binary}" if binary == "codex" else None)
+
+    def fake_run(command, capture_output, text, timeout, check):
+        class Result:
+            returncode = 0
+            stdout = "codex 1.2.3"
+            stderr = ""
+        return Result()
+
+    monkeypatch.setattr(executors_core.subprocess, "run", fake_run)
+    assert main(["executor", "doctor", "codex-cli"]) == 0
+    output = capsys.readouterr().out
+    assert "codex-cli: available" in output
+    assert "healthcheck: ok" in output
 
 
 def test_plan_draft_api_create_confirm_and_delete(tmp_path: Path) -> None:

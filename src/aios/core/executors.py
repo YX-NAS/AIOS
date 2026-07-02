@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
+import subprocess
 from pathlib import Path
 
 from aios.core.instance_manager import ensure_state_dir
@@ -11,71 +13,76 @@ from aios.utils.json_utils import read_json, write_json
 EXECUTOR_KINDS = ["manual", "command"]
 
 
+def _raw_default_executor_library() -> list[dict]:
+    return [
+        {
+            "id": "manual",
+            "label": "Manual",
+            "kind": "manual",
+            "enabled": True,
+            "rank": 1,
+            "binary": None,
+            "args": [],
+            "timeout_seconds": None,
+            "pass_model_as_flag": False,
+            "env": {},
+            "resume_args": [],
+            "continue_args": [],
+            "resume_in_project_root": True,
+            "session_ref_label": "session",
+            "session_capture_patterns": [],
+            "healthcheck_args": [],
+        },
+        {
+            "id": "codex-cli",
+            "label": "Codex CLI",
+            "kind": "command",
+            "enabled": True,
+            "rank": 2,
+            "binary": "codex",
+            "args": ["exec", "--sandbox", "workspace-write", "--model", "{model}", "{prompt}"],
+            "timeout_seconds": 1800,
+            "pass_model_as_flag": True,
+            "env": {},
+            "resume_args": ["resume", "{session_ref}"],
+            "continue_args": ["resume", "--last"],
+            "resume_in_project_root": True,
+            "session_ref_label": "session_id",
+            "session_capture_patterns": [
+                {"pattern": r"session[_\\s-]?id[:=]\\s*(?P<session_id>[0-9a-fA-F-]{8,})", "source": "combined"},
+                {
+                    "pattern": r"(?P<session_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+                    "source": "combined",
+                },
+            ],
+            "healthcheck_args": ["--version"],
+        },
+        {
+            "id": "claude-code-cli",
+            "label": "Claude Code CLI",
+            "kind": "command",
+            "enabled": True,
+            "rank": 3,
+            "binary": "claude",
+            "args": ["-p", "--permission-mode", "bypassPermissions", "{prompt}"],
+            "timeout_seconds": 1800,
+            "pass_model_as_flag": False,
+            "env": {},
+            "resume_args": ["--resume", "{session_ref}"],
+            "continue_args": ["--continue"],
+            "resume_in_project_root": True,
+            "session_ref_label": "session_id_or_name",
+            "session_capture_patterns": [
+                {"pattern": r"session[_\\s-]?id[:=]\\s*(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "combined"},
+                {"pattern": r"--resume\\s+(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "combined"},
+            ],
+            "healthcheck_args": ["--version"],
+        },
+    ]
+
+
 def default_executor_library() -> list[dict]:
-    return normalize_executors(
-        [
-            {
-                "id": "manual",
-                "label": "Manual",
-                "kind": "manual",
-                "enabled": True,
-                "rank": 1,
-                "binary": None,
-                "args": [],
-                "timeout_seconds": None,
-                "pass_model_as_flag": False,
-                "env": {},
-                "resume_args": [],
-                "continue_args": [],
-                "resume_in_project_root": True,
-                "session_ref_label": "session",
-                "session_capture_patterns": [],
-            },
-            {
-                "id": "codex-cli",
-                "label": "Codex CLI",
-                "kind": "command",
-                "enabled": True,
-                "rank": 2,
-                "binary": "codex",
-                "args": ["exec", "--sandbox", "workspace-write", "--model", "{model}", "{prompt}"],
-                "timeout_seconds": 1800,
-                "pass_model_as_flag": True,
-                "env": {},
-                "resume_args": ["resume", "{session_ref}"],
-                "continue_args": ["resume", "--last"],
-                "resume_in_project_root": True,
-                "session_ref_label": "session_id",
-                "session_capture_patterns": [
-                    {"pattern": r"session[_\\s-]?id[:=]\\s*(?P<session_id>[0-9a-fA-F-]{8,})", "source": "combined"},
-                    {
-                        "pattern": r"(?P<session_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
-                        "source": "combined",
-                    },
-                ],
-            },
-            {
-                "id": "claude-code-cli",
-                "label": "Claude Code CLI",
-                "kind": "command",
-                "enabled": True,
-                "rank": 3,
-                "binary": "claude",
-                "args": ["-p", "--permission-mode", "bypassPermissions", "{prompt}"],
-                "timeout_seconds": 1800,
-                "pass_model_as_flag": False,
-                "env": {},
-                "resume_args": ["--resume", "{session_ref}"],
-                "continue_args": ["--continue"],
-                "resume_in_project_root": True,
-                "session_ref_label": "session_id_or_name",
-                "session_capture_patterns": [
-                    {"pattern": r"session[_\\s-]?id[:=]\\s*(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "combined"},
-                    {"pattern": r"--resume\\s+(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "combined"},
-                ],
-            },
-        ]
-    )
+    return normalize_executors(_raw_default_executor_library())
 
 
 def executor_library_path(root: Path | None = None) -> Path:
@@ -104,9 +111,11 @@ def reset_executor_library(root: Path | None = None) -> list[dict]:
 
 def executor_summary(root: Path | None = None) -> dict:
     executors = load_executor_library(root)
+    runtime = {item["id"]: executor_runtime_status(item) for item in executors}
     return {
-        "executors": executors,
+        "executors": [{**item, "runtime": runtime[item["id"]]} for item in executors],
         "enabled_executor_count": len([item for item in executors if item["enabled"]]),
+        "available_executor_count": len([item for item in executors if runtime[item["id"]]["available"]]),
         "kinds": EXECUTOR_KINDS,
     }
 
@@ -118,14 +127,28 @@ def get_executor(root: Path | None, executor_id: str) -> dict:
     raise ValueError(f"Executor not found: {executor_id}")
 
 
-def get_default_executor(root: Path | None = None) -> dict:
+def get_default_executor(root: Path | None = None, command_only: bool = False, available_only: bool = False) -> dict:
     executors = [item for item in load_executor_library(root) if item.get("enabled", True)]
     for executor in executors:
+        if command_only and executor.get("kind") != "command":
+            continue
+        if available_only and not executor_runtime_status(executor)["available"]:
+            continue
         if executor.get("kind") == "command":
             return executor
     if executors:
+        if command_only or available_only:
+            raise ValueError("No enabled executor matches the requested availability constraints.")
         return executors[0]
     raise ValueError("No enabled executor is available.")
+
+
+def get_available_executor(root: Path | None, executor_id: str) -> dict:
+    executor = get_executor(root, executor_id)
+    runtime = executor_runtime_status(executor)
+    if not runtime["available"]:
+        raise ValueError(runtime["reason"] or f"Executor is not available: {executor_id}")
+    return executor
 
 
 def create_executor(
@@ -145,6 +168,7 @@ def create_executor(
     resume_in_project_root: bool = True,
     session_ref_label: str | None = None,
     session_capture_patterns: list[dict] | None = None,
+    healthcheck_args: list[str] | None = None,
 ) -> dict:
     executors = load_executor_library(root)
     cleaned_id = _clean_executor_id(executor_id)
@@ -166,6 +190,7 @@ def create_executor(
         "resume_in_project_root": bool(resume_in_project_root),
         "session_ref_label": _clean_session_ref_label(session_ref_label),
         "session_capture_patterns": _clean_session_capture_patterns(session_capture_patterns or []),
+        "healthcheck_args": [str(arg) for arg in (healthcheck_args or [])],
     }
     executors.append(executor)
     save_executor_library(root, executors)
@@ -190,6 +215,7 @@ def update_executor(
     resume_in_project_root: bool = True,
     session_ref_label: str | None = None,
     session_capture_patterns: list[dict] | None = None,
+    healthcheck_args: list[str] | None = None,
 ) -> dict:
     executors = load_executor_library(root)
     cleaned_id = _clean_executor_id(executor_id)
@@ -213,6 +239,7 @@ def update_executor(
         executor["resume_in_project_root"] = bool(resume_in_project_root)
         executor["session_ref_label"] = _clean_session_ref_label(session_ref_label)
         executor["session_capture_patterns"] = _clean_session_capture_patterns(session_capture_patterns or [])
+        executor["healthcheck_args"] = [str(arg) for arg in (healthcheck_args or [])]
         save_executor_library(root, executors)
         return get_executor(root, cleaned_id)
     raise ValueError(f"Executor not found: {current_executor_id}")
@@ -322,6 +349,92 @@ def resume_shell_preview(
     return preview
 
 
+def executor_runtime_status(executor: dict) -> dict:
+    kind = str(executor.get("kind") or "command").strip().lower()
+    if kind == "manual":
+        return {
+            "available": True,
+            "binary_found": True,
+            "binary_path": None,
+            "healthcheck_status": "not_applicable",
+            "healthcheck_command": None,
+            "healthcheck_output": None,
+            "reason": None,
+        }
+    binary = str(executor.get("binary") or "").strip()
+    if not binary:
+        return {
+            "available": False,
+            "binary_found": False,
+            "binary_path": None,
+            "healthcheck_status": "missing_binary",
+            "healthcheck_command": None,
+            "healthcheck_output": None,
+            "reason": f"Executor binary is not configured: {executor.get('id')}",
+        }
+    resolved = shutil.which(binary)
+    if not resolved:
+        return {
+            "available": False,
+            "binary_found": False,
+            "binary_path": None,
+            "healthcheck_status": "missing_binary",
+            "healthcheck_command": None,
+            "healthcheck_output": None,
+            "reason": f"Executor binary not found in PATH: {binary}",
+        }
+    healthcheck_args = [str(arg) for arg in executor.get("healthcheck_args", [])]
+    if not healthcheck_args:
+        return {
+            "available": True,
+            "binary_found": True,
+            "binary_path": resolved,
+            "healthcheck_status": "skipped",
+            "healthcheck_command": shlex.join([resolved]),
+            "healthcheck_output": None,
+            "reason": None,
+        }
+    command = [resolved, *healthcheck_args]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "available": False,
+            "binary_found": True,
+            "binary_path": resolved,
+            "healthcheck_status": "failed",
+            "healthcheck_command": shlex.join(command),
+            "healthcheck_output": str(exc),
+            "reason": f"Executor healthcheck failed: {binary}",
+        }
+    output = (completed.stdout or completed.stderr or "").strip() or None
+    if completed.returncode != 0:
+        return {
+            "available": False,
+            "binary_found": True,
+            "binary_path": resolved,
+            "healthcheck_status": "failed",
+            "healthcheck_command": shlex.join(command),
+            "healthcheck_output": output,
+            "reason": f"Executor healthcheck exited with code {completed.returncode}: {binary}",
+        }
+    return {
+        "available": True,
+        "binary_found": True,
+        "binary_path": resolved,
+        "healthcheck_status": "ok",
+        "healthcheck_command": shlex.join(command),
+        "healthcheck_output": output,
+        "reason": None,
+    }
+
+
 def _clean_executor_id(executor_id: str) -> str:
     cleaned = str(executor_id).strip()
     if not cleaned:
@@ -347,6 +460,7 @@ def _clean_env(env: dict[str, str]) -> dict[str, str]:
 
 
 def normalize_executors(executors: list[dict]) -> list[dict]:
+    defaults_by_id = {item["id"]: item for item in _raw_default_executor_library()}
     normalized: list[dict] = []
     for index, executor in enumerate(executors):
         executor_id = str(executor.get("id") or "").strip()
@@ -355,6 +469,7 @@ def normalize_executors(executors: list[dict]) -> list[dict]:
         kind = str(executor.get("kind") or "command").strip().lower()
         if kind not in EXECUTOR_KINDS:
             continue
+        default_executor = defaults_by_id.get(executor_id, {})
         normalized.append(
             {
                 "id": executor_id,
@@ -372,6 +487,7 @@ def normalize_executors(executors: list[dict]) -> list[dict]:
                 "resume_in_project_root": bool(executor.get("resume_in_project_root", True)),
                 "session_ref_label": _clean_session_ref_label(executor.get("session_ref_label")),
                 "session_capture_patterns": _clean_session_capture_patterns(executor.get("session_capture_patterns") or []),
+                "healthcheck_args": [str(arg) for arg in executor.get("healthcheck_args", default_executor.get("healthcheck_args", []))],
             }
         )
     _ensure_unique_ids(normalized)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 from aios.core.ccswitch import confirm_ccswitch_bridge
 from aios.core.executions import auto_finish_execution, run_executor_with_auto_finish
-from aios.core.executors import get_default_executor
+from aios.core.executors import executor_summary, get_default_executor
 from aios.core.scheduler import scheduler_summary
 
 
@@ -89,12 +89,17 @@ def auto_progress_next_step(
 
     candidate = next_dispatch_candidate(before["items"])
     if candidate is None:
+        default_executor = None
+        try:
+            default_executor = get_default_executor(None, command_only=True, available_only=True)
+        except ValueError:
+            default_executor = None
         return {
             "progressed": False,
             "dispatched": False,
             "auto_finished": False,
             "auto_confirmed_bridge": False,
-            "executor": get_default_executor(None),
+            "executor": default_executor,
             "scheduler_before": before,
             "scheduler_after": before,
             "scheduler_item": None,
@@ -105,8 +110,29 @@ def auto_progress_next_step(
             "execution": None,
         }
 
-    executor = get_default_executor(None) if not executor_id else None
-    selected_executor_id = executor_id or executor["id"]
+    executor = None
+    selected_executor_id = executor_id
+    if not executor_id:
+        try:
+            executor = get_default_executor(None, command_only=True, available_only=True)
+            selected_executor_id = executor["id"]
+        except ValueError:
+            return {
+                "progressed": False,
+                "dispatched": False,
+                "auto_finished": False,
+                "auto_confirmed_bridge": False,
+                "executor": None,
+                "scheduler_before": before,
+                "scheduler_after": before,
+                "scheduler_item": candidate,
+                "reason": "当前没有可用的命令型执行器，请先运行 `aios executor doctor` 检查 CLI 安装状态。",
+                "task": None,
+                "route": None,
+                "handoff": None,
+                "execution": None,
+                "executor_summary": executor_summary(),
+            }
     result = run_executor_with_auto_finish(
         root,
         candidate["task_id"],

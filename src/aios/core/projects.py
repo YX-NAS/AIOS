@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from aios.core.executors import executor_summary
 from aios.core.executions import execution_summary
 from aios.core.instance_manager import DEFAULT_HOST, instance_status, project_id_for_root, state_dir
 from aios.core.models import model_summary
@@ -84,6 +85,7 @@ def project_runtime_data(root: Path) -> dict:
             "done_tasks": 0,
             "file_count": 0,
             "enabled_model_count": 0,
+            "available_executor_count": 0,
             "languages": [],
             "frameworks": [],
             "latest_task_title": None,
@@ -120,6 +122,7 @@ def project_runtime_data(root: Path) -> dict:
         "done_tasks": len([task for task in tasks if task["status"] == "done"]),
         "file_count": file_summary.get("file_count", 0),
         "enabled_model_count": model_summary(root)["enabled_model_count"],
+        "available_executor_count": executor_summary(root)["available_executor_count"],
         "languages": file_summary.get("languages", []),
         "frameworks": file_summary.get("frameworks", []),
         "latest_task_title": latest_task.get("title") if latest_task else None,

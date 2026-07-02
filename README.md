@@ -27,6 +27,7 @@ bridge 确认安全门方案见 [docs/P3_22_DESIGN.md](/Users/yaxun/SynologyDriv
 bridge 恢复信号方案见 [docs/P3_23_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_23_DESIGN.md)。
 bridge 恢复信号自动确认方案见 [docs/P3_24_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_24_DESIGN.md)。
 历史会话候选与恢复建议方案见 [docs/P3_26_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_26_DESIGN.md)。
+执行器真实 CLI 可用性探测方案见 [docs/P3_27_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_27_DESIGN.md)。
 
 ## MVP 边界
 
@@ -75,6 +76,7 @@ bridge 恢复信号自动确认方案见 [docs/P3_24_DESIGN.md](/Users/yaxun/Syn
 - `aios run auto --auto-confirm-bridge-signal` 可在检测到本地恢复 signal 后自动确认 bridge 已就绪
 - `aios run sessions TASK-ID` 可列出当前任务最相关的历史会话候选
 - `aios run resume TASK-ID --history-fallback` 可在没有当前挂接会话时显式使用最佳历史候选恢复
+- `aios executor doctor` 可检查执行器二进制与基础 healthcheck，避免自动派发到不可用 CLI
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
@@ -103,6 +105,7 @@ PYTHONPATH=src python -m aios.main status
 ```bash
 aios init --name my-project --type web-app
 aios executor list
+aios executor doctor
 aios scan
 aios task create "实现登录功能"
 aios task plan "完成聊天接口时间上下文修复"
