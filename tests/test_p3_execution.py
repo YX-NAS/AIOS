@@ -127,6 +127,8 @@ def test_execution_summary_is_visible_in_launcher_project_status(tmp_path: Path,
         project_id = created_payload["project"]["project_id"]
         assert created_payload["project"]["active_execution_count"] == 1
         assert created_payload["project"]["latest_execution_status"] == "running"
+        assert "ready_count" in created_payload["project"]
+        assert "scheduler_next_action" in created_payload["project"]
 
         main(["--root", str(project), "run", "finish", task_id, "--summary", "完成登录功能"])
 

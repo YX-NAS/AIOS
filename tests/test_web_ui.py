@@ -24,6 +24,7 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         status_code, status_payload = request_json(handle.url, "/api/status")
         assert status_code == 200
         assert status_payload["initialized"] is False
+        assert "ready_count" in status_payload
 
         status_code, init_payload = request_json(
             handle.url,
@@ -57,6 +58,10 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert status_code == 201
         assert len(planned_payload["tasks"]) >= 3
         assert planned_payload["tasks"][0]["recommended_model"]
+
+        status_code, scheduler_payload = request_json(handle.url, "/api/scheduler")
+        assert status_code == 200
+        assert "items" in scheduler_payload
 
         status_code, route_payload = request_json(handle.url, f"/api/route/{task_id}")
         assert status_code == 200

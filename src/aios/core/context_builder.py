@@ -56,8 +56,7 @@ def build_context_pack(root: Path, task: dict, model: str) -> dict:
     architecture_text = _read_text(aios_dir / "architecture.md", "暂无架构说明。")
     rules_text = _read_text(aios_dir / "rules.md", "暂无规则。")
     decisions_text = _read_text(aios_dir / "decisions.md", "暂无决策。")
-    warnings = build_pack_warnings(task, relevant_files, file_index, context_text, architecture_text)
-    severe_warnings = [item for item in warnings if is_severe_warning(item)]
+    warnings, severe_warnings = inspect_context_pack(root, task, model, file_index, relevant_files, context_text, architecture_text)
     dependency_lines = [
         f"- 父任务：{task.get('parent_task_id') or '无'}",
         f"- 依赖任务：{', '.join(task.get('depends_on_task_ids') or []) or '无'}",
@@ -157,6 +156,25 @@ def build_context_pack(root: Path, task: dict, model: str) -> dict:
         "relevant_files": relevant_files,
         "quality": "warning" if severe_warnings else "ok",
     }
+
+
+def inspect_context_pack(
+    root: Path,
+    task: dict,
+    model: str,
+    file_index: dict | None = None,
+    relevant_files: list[dict] | None = None,
+    context_text: str | None = None,
+    architecture_text: str | None = None,
+) -> tuple[list[str], list[str]]:
+    aios_dir = require_aios(root)
+    file_index = file_index or read_json(aios_dir / "file-index.json", {"files": [], "summary": {}})
+    relevant_files = relevant_files or choose_relevant_files(file_index.get("files", []), task["type"], task["title"])
+    context_text = context_text if context_text is not None else _read_text(aios_dir / "context.md", "暂无项目上下文。")
+    architecture_text = architecture_text if architecture_text is not None else _read_text(aios_dir / "architecture.md", "暂无架构说明。")
+    warnings = build_pack_warnings(task, relevant_files, file_index, context_text, architecture_text)
+    severe_warnings = [item for item in warnings if is_severe_warning(item)]
+    return warnings, severe_warnings
 
 
 def choose_relevant_files(files: list[dict], task_type: str, task_title: str = "", limit: int = 20) -> list[dict]:

@@ -64,6 +64,14 @@
             <div class="metric-label">已索引文件</div>
             <div id="metricFiles" class="metric-value">0</div>
           </article>
+          <article class="metric-card">
+            <div class="metric-label">可执行任务</div>
+            <div id="metricReady" class="metric-value">0</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-label">被阻塞任务</div>
+            <div id="metricBlocked" class="metric-value">0</div>
+          </article>
         </section>
 
         <section class="workspace-grid">
@@ -191,6 +199,10 @@
                 <div class="inspector-block">
                   <div class="small-label">执行状态</div>
                   <div id="executionCard" class="route-card">还没有执行记录。</div>
+                </div>
+                <div class="inspector-block">
+                  <div class="small-label">调度状态</div>
+                  <div id="schedulerCard" class="route-card">还没有调度信息。</div>
                 </div>
                 <form id="packForm" class="stack-form slim">
                   <label>

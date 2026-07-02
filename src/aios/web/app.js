@@ -9,6 +9,7 @@ const state = {
   packPage: 1,
   handoffs: [],
   currentExecution: null,
+  scheduler: null,
   planPreview: null,
   selectedTaskId: null,
 };
@@ -22,6 +23,8 @@ const elements = {
   metricOpen: document.getElementById("metricOpen"),
   metricDone: document.getElementById("metricDone"),
   metricFiles: document.getElementById("metricFiles"),
+  metricReady: document.getElementById("metricReady"),
+  metricBlocked: document.getElementById("metricBlocked"),
   initEmptyState: document.getElementById("initEmptyState"),
   projectStatus: document.getElementById("projectStatus"),
   languageTags: document.getElementById("languageTags"),
@@ -34,6 +37,7 @@ const elements = {
   acceptanceList: document.getElementById("acceptanceList"),
   routeCard: document.getElementById("routeCard"),
   executionCard: document.getElementById("executionCard"),
+  schedulerCard: document.getElementById("schedulerCard"),
   packList: document.getElementById("packList"),
   activityLog: document.getElementById("activityLog"),
   refreshButton: document.getElementById("refreshButton"),
@@ -102,6 +106,8 @@ function renderStatus() {
   elements.metricOpen.textContent = String(status.open_tasks);
   elements.metricDone.textContent = String(status.done_tasks);
   elements.metricFiles.textContent = String(status.file_count);
+  elements.metricReady.textContent = String(status.ready_count || 0);
+  elements.metricBlocked.textContent = String(status.blocked_count || 0);
 
   if (status.initialized) {
     elements.statusPill.textContent = "Initialized";
@@ -324,6 +330,7 @@ async function loadTaskInspector() {
     <ul class="simple-list">${route.reason.map((item) => `<li>${item}</li>`).join("")}</ul>
   `;
   renderExecution(task, execution);
+  renderScheduler(task);
 
   const hasPack = state.packs.some((pack) => pack.task_id === task.id);
   elements.copyCurrentPackButton.classList.toggle("hidden", !hasPack);
@@ -348,6 +355,29 @@ function renderExecution(task, execution) {
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
+  `;
+}
+
+function renderScheduler(task) {
+  const summary = state.scheduler;
+  const item = summary?.items?.find((entry) => entry.task_id === task.id);
+  if (!item) {
+    elements.schedulerCard.innerHTML = `
+      <strong>暂无调度信息</strong>
+      <div class="muted">任务还没有进入调度视图。</div>
+    `;
+    return;
+  }
+  const warnings = (item.pack_warnings || []).length
+    ? `<ul class="simple-list">${item.pack_warnings.map((warning) => `<li>${warning}</li>`).join("")}</ul>`
+    : `<div class="muted">无额外上下文提示。</div>`;
+  elements.schedulerCard.innerHTML = `
+    <strong>${item.scheduler_state}</strong>
+    <div class="muted">下一步：${item.next_action || "-"}</div>
+    <div class="muted">原因：${item.reason || "-"}</div>
+    <div class="muted">Pack 质量：${item.pack_quality || "-"}</div>
+    <div class="muted">未满足依赖：${(item.unmet_dependencies || []).join(", ") || "-"}</div>
+    ${warnings}
   `;
 }
 
@@ -398,16 +428,18 @@ document.getElementById("planCancelButton")?.addEventListener("click", () => {
 });
 
 async function refreshDashboard() {
-  const [statusData, tasksData, packsData, handoffsData] = await Promise.all([
+  const [statusData, tasksData, packsData, handoffsData, schedulerData] = await Promise.all([
     api("/api/status"),
     api("/api/tasks"),
     api("/api/packs"),
     api("/api/handoffs"),
+    api("/api/scheduler"),
   ]);
   state.status = statusData;
   state.tasks = tasksData.tasks;
   state.packs = packsData.packs;
   state.handoffs = handoffsData.handoffs;
+  state.scheduler = schedulerData;
   if (!state.selectedTaskId && state.tasks.length) {
     state.selectedTaskId = sortByLatest(state.tasks)[0].id;
   }

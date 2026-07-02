@@ -7,6 +7,7 @@ from aios.core.executions import execution_summary
 from aios.core.instance_manager import DEFAULT_HOST, instance_status, project_id_for_root, state_dir
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
+from aios.core.scheduler import scheduler_summary
 from aios.utils.json_utils import read_json, write_json
 from aios.utils.text import now_iso
 
@@ -92,6 +93,13 @@ def project_runtime_data(root: Path) -> dict:
             "active_execution_count": 0,
             "latest_execution_status": None,
             "last_execution_updated_at": None,
+            "ready_count": 0,
+            "blocked_count": 0,
+            "review_pending_count": 0,
+            "failed_count": 0,
+            "scheduler_next_task_id": None,
+            "scheduler_next_task_title": None,
+            "scheduler_next_action": None,
         }
     tasks_payload = read_json(aios_dir / "tasks.json", {"tasks": []})
     tasks = tasks_payload["tasks"]
@@ -104,6 +112,7 @@ def project_runtime_data(root: Path) -> dict:
     else:
         goals = [task.get("source_goal") for task in reversed(tasks) if task.get("source_goal")]
         latest_goal = goals[0] if goals else None
+    schedule = scheduler_summary(root)
     return {
         "task_count": len(tasks),
         "open_tasks": len([task for task in tasks if task["status"] != "done"]),
@@ -116,6 +125,13 @@ def project_runtime_data(root: Path) -> dict:
         "latest_goal": latest_goal,
         "last_task_updated_at": latest_task.get("updated_at") if latest_task else None,
         **execution_summary(root),
+        "ready_count": schedule["ready_count"],
+        "blocked_count": schedule["blocked_count"],
+        "review_pending_count": schedule["review_pending_count"],
+        "failed_count": schedule["failed_count"],
+        "scheduler_next_task_id": schedule["next_task_id"],
+        "scheduler_next_task_title": schedule["next_task_title"],
+        "scheduler_next_action": schedule["next_action"],
     }
 
 

@@ -21,6 +21,7 @@ from aios.core.paths import aios_path
 from aios.core.project import initialize_project
 from aios.core.router import log_routing, route_task
 from aios.core.scanner import scan_project
+from aios.core.scheduler import scheduler_summary
 from aios.core.tasks import (
     confirm_plan_draft,
     create_plan_draft,
@@ -65,6 +66,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(self._status_payload())
                 if parsed.path == "/api/tasks":
                     return self._send_json({"tasks": load_tasks_safe(self.project_root)})
+                if parsed.path == "/api/scheduler":
+                    return self._send_json(scheduler_summary(self.project_root))
                 if parsed.path == "/api/task-plans":
                     return self._send_json({"drafts": list_plan_drafts(self.project_root)})
                 if parsed.path.startswith("/api/task-plans/"):
@@ -350,6 +353,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "handoffs": list_handoffs(self.project_root) if initialized else [],
                 "enabled_model_count": model_summary()["enabled_model_count"],
                 "enabled_executor_count": executor_summary()["enabled_executor_count"],
+                **(scheduler_summary(self.project_root) if initialized else scheduler_summary_empty()),
                 **(execution_summary(self.project_root) if initialized else execution_summary_empty()),
             }
 
@@ -406,6 +410,20 @@ def execution_summary_empty() -> dict:
         "active_execution_count": 0,
         "latest_execution_status": None,
         "last_execution_updated_at": None,
+    }
+
+
+def scheduler_summary_empty() -> dict:
+    return {
+        "ready_count": 0,
+        "blocked_count": 0,
+        "review_pending_count": 0,
+        "failed_count": 0,
+        "active_count": 0,
+        "next_task_id": None,
+        "next_task_title": None,
+        "next_action": None,
+        "items": [],
     }
 
 
