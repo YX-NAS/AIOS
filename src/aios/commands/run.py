@@ -13,6 +13,7 @@ from aios.core.executions import (
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
+    retry_execution_after_verification_failure,
     run_executor_execution,
     run_executor_with_auto_finish,
 )
@@ -43,6 +44,7 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--auto-pr", action="store_true", help="Automatically create a draft PR after successful auto push.")
     parser.add_argument("--pr-base-branch", default="main", help="Base branch used for auto PR draft creation. Defaults to main.")
     parser.add_argument("--auto-confirm-bridge-signal", action="store_true", help="Auto-confirm bridge when a local resume signal has been detected.")
+    parser.add_argument("--retry-on-verify-fail", action="store_true", help="When verification fails, automatically retry once with the next fallback model if available.")
     parser.add_argument("--session-id", default=None, help="External session id used for attach/resume.")
     parser.add_argument("--session-name", default=None, help="External session name used for attach/resume.")
     parser.add_argument("--session-note", default=None, help="Optional note recorded with one attached session.")
@@ -75,6 +77,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             auto_pr=args.auto_pr,
             pr_base_branch=args.pr_base_branch,
             auto_confirm_bridge_signal=args.auto_confirm_bridge_signal,
+            retry_on_verify_fail=args.retry_on_verify_fail,
         )
         if not result["progressed"]:
             print(f"Auto dispatch skipped: {result['reason']}")
@@ -94,6 +97,12 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             _print_git_push(result.get("git_push"))
             _print_git_pr(result.get("git_pr"))
             return
+        if result.get("auto_retried"):
+            retry = result.get("retry") or {}
+            print(f"Auto retried task: {result['task']['id']} {result['task']['title']}")
+            if result.get("previous_verification"):
+                print(f"Previous verification: {result['previous_verification']['summary']}")
+            print(f"Retry model: {retry.get('retry_model') or result['execution'].get('planned_model') or '-'}")
         if result.get("auto_confirmed_bridge") and not result["dispatched"]:
             print(f"Bridge auto-confirmed: {result['task']['id']} {result['task']['title']}")
             print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
@@ -124,6 +133,8 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         _print_git_pr(result.get("git_pr"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
+        elif result.get("auto_retried") and execution["status"] == "review_pending":
+            print("Next: fallback retry has completed one new execution, but still needs review or another manual decision.")
         elif execution["status"] == "review_pending":
             print("Next: review the generated changes and use `aios run finish` to accept the task.")
         elif execution["status"] == "failed":
@@ -295,6 +306,28 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             auto_pr=args.auto_pr,
             pr_base_branch=args.pr_base_branch,
         )
+        if result.get("verification") and not result.get("auto_finished") and args.retry_on_verify_fail:
+            retried = retry_execution_after_verification_failure(
+                root,
+                task_id,
+                args.executor,
+                result["verification"],
+                note=args.note,
+                auto_finish=args.auto_finish,
+                summary=args.summary,
+                actual_model=args.actual_model,
+                verify_command=args.verify_command,
+                score=args.score,
+                score_note=args.score_note,
+                auto_commit=args.auto_commit,
+                auto_push=args.auto_push,
+                push_remote=args.push_remote,
+                allow_protected_push=args.allow_protected_push,
+                auto_pr=args.auto_pr,
+                pr_base_branch=args.pr_base_branch,
+            )
+            if retried:
+                result = retried
         execution = result["execution"]
         route = result["route"]
         handoff = result["handoff"]
@@ -312,11 +345,16 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Log: {execution['executor_log_path']}")
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
+        if result.get("auto_retried"):
+            print(f"Previous verification: {result['previous_verification']['summary']}")
+            print(f"Retry model: {result['retry']['retry_model']}")
         _print_git_commit(result.get("git_commit"))
         _print_git_push(result.get("git_push"))
         _print_git_pr(result.get("git_pr"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
+        elif result.get("auto_retried") and execution["status"] == "review_pending":
+            print("Next: fallback retry has completed one new execution, but still needs review or another manual decision.")
         elif execution["status"] == "review_pending":
             print("Next: review the generated changes and use `aios run finish` to accept the task.")
         elif execution["status"] == "failed":

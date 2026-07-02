@@ -703,6 +703,7 @@ elements.dispatchNextButton.addEventListener("click", async () => {
     const autoPush = completeForm.get("auto_push") === "on";
     const autoPr = completeForm.get("auto_pr") === "on";
     const autoConfirmBridgeSignal = completeForm.get("auto_confirm_bridge_signal") === "on";
+    const retryOnVerifyFail = completeForm.get("retry_on_verify_fail") === "on";
     const data = await api("/api/run/dispatch", {
       method: "POST",
       body: JSON.stringify({
@@ -716,6 +717,7 @@ elements.dispatchNextButton.addEventListener("click", async () => {
         auto_push: autoPush,
         auto_pr: autoPr,
         auto_confirm_bridge_signal: autoConfirmBridgeSignal,
+        retry_on_verify_fail: retryOnVerifyFail,
       }),
     });
     await refreshDashboard();
@@ -734,6 +736,9 @@ elements.dispatchNextButton.addEventListener("click", async () => {
     const prLine = data.git_pr
       ? (data.git_pr.created ? `\nDraft PR：${data.git_pr.url}` : `\nDraft PR 跳过：${data.git_pr.reason}`)
       : "";
+    const retryLine = data.auto_retried
+      ? `\n自动重试：已从 ${data.retry?.failed_model || "-"} 切到 ${data.retry?.retry_model || data.execution?.planned_model || "-"}`
+      : "";
     if (data.auto_finished && !data.dispatched) {
       setActivity(`已自动完成 ${data.task.id}。\n状态：${data.execution.status}${data.verification ? `\n验证：${data.verification.summary}` : ""}${gitLine}${pushLine}${prLine}`);
       return;
@@ -744,7 +749,8 @@ elements.dispatchNextButton.addEventListener("click", async () => {
     }
     const verificationLine = data.verification ? `\n验证：${data.verification.summary}` : "";
     const finishLine = data.auto_finished ? "\n任务已自动完成并回写。" : "";
-    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}${verificationLine}${finishLine}${gitLine}${pushLine}${prLine}`);
+    const previousVerificationLine = data.previous_verification ? `\n上一次验证：${data.previous_verification.summary}` : "";
+    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}${verificationLine}${previousVerificationLine}${retryLine}${finishLine}${gitLine}${pushLine}${prLine}`);
   }, "自动派发下一任务失败。");
 });
 

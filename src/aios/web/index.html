@@ -306,6 +306,10 @@
                     <input name="auto_confirm_bridge_signal" type="checkbox" />
                     <span>检测到 Bridge 恢复信号时自动确认切换已就绪</span>
                   </label>
+                  <label class="checkbox-row">
+                    <input name="retry_on_verify_fail" type="checkbox" />
+                    <span>验证失败时自动切换到下一候选模型并重试一次</span>
+                  </label>
                   <button type="submit" class="button primary wide">标记完成</button>
                 </form>
               </div>

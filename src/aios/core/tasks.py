@@ -263,6 +263,17 @@ def set_task_status(root: Path, task_id: str, status: str) -> dict:
     raise ValueError(f"Task not found: {task_id}")
 
 
+def update_task_fields(root: Path, task_id: str, updates: dict) -> dict:
+    tasks = load_tasks(root)
+    for task in tasks:
+        if task["id"] == task_id:
+            task.update(updates)
+            task["updated_at"] = now_iso()
+            save_tasks(root, tasks)
+            return task
+    raise ValueError(f"Task not found: {task_id}")
+
+
 def build_preview_tasks(root: Path, goal: str, nodes: list[dict]) -> list[dict]:
     previews: list[dict] = []
     for node in nodes:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aios.core.ccswitch import confirm_ccswitch_bridge
-from aios.core.executions import auto_finish_execution, run_executor_with_auto_finish
+from aios.core.executions import auto_finish_execution, retry_execution_after_verification_failure, run_executor_with_auto_finish
 from aios.core.executors import executor_summary, get_default_executor
 from aios.core.scheduler import scheduler_summary
 
@@ -27,6 +27,7 @@ def auto_progress_next_step(
     auto_pr: bool = False,
     pr_base_branch: str = "main",
     auto_confirm_bridge_signal: bool = False,
+    retry_on_verify_fail: bool = False,
 ) -> dict:
     before = scheduler_summary(root)
     next_action = before.get("next_action")
@@ -47,10 +48,43 @@ def auto_progress_next_step(
             auto_pr=auto_pr,
             pr_base_branch=pr_base_branch,
         )
+        if not finish_result["finished"] and retry_on_verify_fail and finish_result.get("verification"):
+            retry_result = retry_execution_after_verification_failure(
+                root,
+                task_id=before["next_task_id"],
+                verification=finish_result["verification"],
+                executor_id=executor_id or (finish_result.get("execution") or {}).get("executor_id"),
+                note=note,
+                auto_finish=auto_finish,
+                summary=summary,
+                actual_model=actual_model,
+                verify_command=verify_command,
+                score=score,
+                score_note=score_note,
+                auto_commit=auto_commit,
+                auto_push=auto_push,
+                push_remote=push_remote,
+                allow_protected_push=allow_protected_push,
+                auto_pr=auto_pr,
+                pr_base_branch=pr_base_branch,
+            )
+            if retry_result:
+                return {
+                    "progressed": True,
+                    "dispatched": True,
+                    "auto_finished": retry_result.get("auto_finished", False),
+                    "auto_confirmed_bridge": False,
+                    "auto_retried": True,
+                    "scheduler_before": before,
+                    "scheduler_after": scheduler_summary(root),
+                    "scheduler_item": next_scheduler_item(scheduler_summary(root)),
+                    **retry_result,
+                }
         return {
             "progressed": finish_result["finished"],
             "dispatched": False,
             "auto_finished": finish_result["finished"],
+            "auto_retried": False,
             "executor": None,
             "scheduler_before": before,
             "scheduler_after": scheduler_summary(root),
@@ -153,10 +187,42 @@ def auto_progress_next_step(
         auto_pr=auto_pr,
         pr_base_branch=pr_base_branch,
     )
+    if result.get("verification") and not result.get("auto_finished") and retry_on_verify_fail:
+        retry_result = retry_execution_after_verification_failure(
+            root,
+            task_id=candidate["task_id"],
+            verification=result["verification"],
+            executor_id=selected_executor_id,
+            note=note,
+            auto_finish=auto_finish,
+            summary=summary,
+            actual_model=actual_model,
+            verify_command=verify_command,
+            score=score,
+            score_note=score_note,
+            auto_commit=auto_commit,
+            auto_push=auto_push,
+            push_remote=push_remote,
+            allow_protected_push=allow_protected_push,
+            auto_pr=auto_pr,
+            pr_base_branch=pr_base_branch,
+        )
+        if retry_result:
+            return {
+                "progressed": True,
+                "dispatched": True,
+                "auto_confirmed_bridge": False,
+                "auto_retried": True,
+                "scheduler_before": before,
+            "scheduler_after": scheduler_summary(root),
+            "scheduler_item": next_scheduler_item(scheduler_summary(root)),
+                **retry_result,
+            }
     return {
         "progressed": True,
         "dispatched": True,
         "auto_confirmed_bridge": False,
+        "auto_retried": False,
         "scheduler_before": before,
         "scheduler_after": scheduler_summary(root),
         "scheduler_item": candidate,
@@ -208,3 +274,4 @@ def build_dispatch_block_reason(summary: dict) -> str:
     if summary.get("blocked_count"):
         return "当前没有可执行任务，仍有依赖或 Context Pack 告警阻塞。"
     return "当前没有可自动派发的任务。"
+

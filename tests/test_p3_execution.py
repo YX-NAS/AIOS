@@ -13,6 +13,7 @@ from aios.core.executions import build_execution_resume, latest_execution_for_ta
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.launcher import start_launcher_server
 from aios.core.models import create_model
+from aios.core.tasks import update_task_fields
 from aios.core.webapp import start_web_server
 from aios.main import main
 
@@ -1199,6 +1200,79 @@ def test_run_executor_cli_can_auto_finish_after_verification(tmp_path: Path, mon
     assert updated_task["status"] == "done"
 
 
+def test_run_executor_cli_can_retry_once_with_fallback_after_verification_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    update_task_fields(
+        tmp_path,
+        task["id"],
+        {
+            "recommended_model": "gpt-5.5",
+            "fallback_models": ["claude"],
+        },
+    )
+    create_executor(
+        None,
+        "retry-auto-cli",
+        label="Retry Auto CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    verify_script = tmp_path / "verify_once.py"
+    verify_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "path = Path('.verify-once-count')",
+                "count = int(path.read_text(encoding='utf-8')) if path.exists() else 0",
+                "path.write_text(str(count + 1), encoding='utf-8')",
+                "sys.exit(1 if count == 0 else 0)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            task["id"],
+            "--executor",
+            "retry-auto-cli",
+            "--auto-finish",
+            "--summary",
+            "文档更新完成",
+            "--verify-command",
+            "python3 verify_once.py",
+            "--retry-on-verify-fail",
+        ]
+    ) == 0
+
+    executions = load_executions(tmp_path)
+    assert len(executions) == 2
+    first_execution = executions[0]
+    second_execution = executions[1]
+    assert first_execution["status"] == "retry_queued"
+    assert first_execution["retry_next_model"] == "claude"
+    assert second_execution["status"] == "finished"
+    assert second_execution["planned_model"] == "claude"
+    assert second_execution["retry_source_execution_id"] == first_execution["execution_id"]
+    updated_task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    assert updated_task["status"] == "done"
+    assert updated_task["auto_retry_count"] == 1
+
+
 def test_run_finish_cli_can_auto_commit_when_repo_was_clean(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
     init_git_repo(tmp_path)
@@ -1621,6 +1695,80 @@ def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path:
         assert payload["auto_finished"] is False
         assert payload["execution"]["status"] == "review_pending"
         assert "Verification failed" in payload["reason"]
+    finally:
+        handle.close()
+
+
+def test_run_dispatch_api_can_retry_once_with_fallback_after_verification_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "verify-retry-cli",
+        label="Verify Retry CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    verify_script = tmp_path / "verify_once.py"
+    verify_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "path = Path('.verify-dispatch-count')",
+                "count = int(path.read_text(encoding='utf-8')) if path.exists() else 0",
+                "path.write_text(str(count + 1), encoding='utf-8')",
+                "sys.exit(2 if count == 0 else 0)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        update_task_fields(
+            tmp_path,
+            task["id"],
+            {
+                "recommended_model": "gpt-5.5",
+                "fallback_models": ["claude"],
+            },
+        )
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={
+                "executor_id": "verify-retry-cli",
+                "auto_finish": True,
+                "summary": "文档更新完成",
+                "verify_command": "python3 verify_once.py",
+                "retry_on_verify_fail": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["progressed"] is True
+        assert payload["dispatched"] is True
+        assert payload["auto_retried"] is True
+        assert payload["auto_finished"] is True
+        assert payload["retry"]["failed_model"] == "gpt-5.5"
+        assert payload["retry"]["retry_model"] == "claude"
+        assert payload["execution"]["planned_model"] == "claude"
+        assert payload["execution"]["status"] == "finished"
+
+        executions = load_executions(tmp_path)
+        assert len(executions) == 2
+        assert executions[0]["status"] == "retry_queued"
+        assert executions[1]["retry_source_execution_id"] == executions[0]["execution_id"]
     finally:
         handle.close()
 

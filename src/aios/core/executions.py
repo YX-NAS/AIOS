@@ -22,7 +22,7 @@ from aios.core.paths import require_aios
 from aios.core.router import route_task
 from aios.core.scoring import save_score
 from aios.core.terminal_resume import launch_command_in_terminal
-from aios.core.tasks import get_task, set_task_status
+from aios.core.tasks import get_task, set_task_status, update_task_fields
 from aios.core.workflow import finalize_task
 from aios.utils.json_utils import read_json, write_json
 from aios.utils.text import now_iso, today
@@ -454,6 +454,75 @@ def run_executor_with_auto_finish(
     return result
 
 
+def retry_execution_after_verification_failure(
+    root: Path,
+    task_id: str,
+    executor_id: str,
+    verification: dict,
+    note: str | None = None,
+    auto_finish: bool = False,
+    summary: str | None = None,
+    actual_model: str | None = None,
+    verify_command: str | None = None,
+    score: int | None = None,
+    score_note: str | None = None,
+    auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
+) -> dict | None:
+    try:
+        executor = get_available_executor(None, executor_id)
+    except ValueError:
+        return None
+
+    retry = requeue_execution_after_verification_failure(root, task_id, verification)
+    if not retry["retried"]:
+        return None
+
+    result = run_executor_with_auto_finish(
+        root,
+        task_id,
+        executor["id"],
+        model=retry["retry_model"],
+        refresh_pack=False,
+        note=note,
+        auto_finish=auto_finish,
+        summary=summary,
+        actual_model=actual_model,
+        verify_command=verify_command,
+        score=score,
+        score_note=score_note,
+        auto_commit=auto_commit,
+        auto_push=auto_push,
+        push_remote=push_remote,
+        allow_protected_push=allow_protected_push,
+        auto_pr=auto_pr,
+        pr_base_branch=pr_base_branch,
+    )
+    if result.get("execution"):
+        update_execution(
+            root,
+            result["execution"]["execution_id"],
+            {
+                "retry_source_execution_id": retry["execution"]["execution_id"],
+                "retry_source_model": retry["failed_model"],
+                "retry_attempt": retry["retry_attempt"],
+            },
+        )
+        result["execution"] = result["execution"] | {
+            "retry_source_execution_id": retry["execution"]["execution_id"],
+            "retry_source_model": retry["failed_model"],
+            "retry_attempt": retry["retry_attempt"],
+        }
+    result["retry"] = retry
+    result["previous_verification"] = verification
+    result["auto_retried"] = True
+    return result
+
+
 def finish_manual_execution(
     root: Path,
     task_id: str,
@@ -602,7 +671,7 @@ def auto_finish_execution(
 ) -> dict:
     if not summary:
         raise ValueError("Use `--summary` when enabling auto finish.")
-    execution = latest_execution_for_task(root, task_id)
+    execution = latest_open_execution_for_task(root, task_id) or latest_execution_for_task(root, task_id)
     if not execution:
         raise ValueError(f"No execution record for {task_id}.")
     if execution.get("status") != "review_pending":
@@ -652,6 +721,74 @@ def auto_finish_execution(
         "reason": None,
         **result,
         "verification": verification,
+    }
+
+
+def requeue_execution_after_verification_failure(root: Path, task_id: str, verification: dict | None = None) -> dict:
+    execution = latest_execution_for_task(root, task_id)
+    if not execution:
+        raise ValueError(f"No execution record for {task_id}.")
+    if execution.get("status") != "review_pending":
+        raise ValueError(f"Execution is not ready for retry: {task_id}")
+
+    task = get_task(root, task_id)
+    failed_model = str(execution.get("actual_model") or execution.get("planned_model") or task.get("recommended_model") or "").strip()
+    retry_models = _retry_model_candidates(task, failed_model)
+    if not retry_models:
+        return {
+            "retried": False,
+            "reason": "Verification failed and no fallback model remains for automatic retry.",
+            "task": task,
+            "execution": execution,
+            "failed_model": failed_model or None,
+            "retry_model": None,
+            "retry_attempt": int(task.get("auto_retry_count") or 0),
+        }
+
+    retry_model = retry_models[0]
+    remaining_models = retry_models[1:]
+    retry_attempt = int(task.get("auto_retry_count") or 0) + 1
+    timestamp = now_iso()
+    retry_reason = (verification or {}).get("summary") or "Verification failed."
+
+    updated_execution = update_execution(
+        root,
+        execution["execution_id"],
+        {
+            "status": "retry_queued",
+            "finished_at": timestamp,
+            "updated_at": timestamp,
+            "retry_trigger": "verification_failed",
+            "retry_reason": retry_reason,
+            "retry_failed_model": failed_model or None,
+            "retry_next_model": retry_model,
+            "retry_attempt": retry_attempt,
+        },
+    )
+    updated_task = update_task_fields(
+        root,
+        task_id,
+        {
+            "status": "todo",
+            "recommended_model": retry_model,
+            "fallback_models": remaining_models,
+            "auto_retry_count": retry_attempt,
+            "last_retry_at": timestamp,
+            "last_retry_reason": retry_reason,
+            "last_failed_model": failed_model or None,
+            "last_retry_execution_id": execution["execution_id"],
+            "last_retry_trigger": "verification_failed",
+        },
+    )
+    return {
+        "retried": True,
+        "reason": None,
+        "task": updated_task,
+        "execution": updated_execution,
+        "failed_model": failed_model or None,
+        "retry_model": retry_model,
+        "remaining_fallback_models": remaining_models,
+        "retry_attempt": retry_attempt,
     }
 
 
@@ -784,6 +921,20 @@ def run_verification_command(root: Path, command: str) -> dict:
         "stderr_excerpt": stderr_excerpt,
         "summary": " | ".join(parts),
     }
+
+
+def _retry_model_candidates(task: dict, failed_model: str | None) -> list[str]:
+    ordered: list[str] = []
+    for model in [task.get("recommended_model"), *(task.get("fallback_models") or [])]:
+        cleaned = str(model or "").strip()
+        if cleaned and cleaned not in ordered:
+            ordered.append(cleaned)
+    if not ordered:
+        return []
+    failed = str(failed_model or "").strip()
+    if failed and failed in ordered:
+        return ordered[ordered.index(failed) + 1 :]
+    return ordered[1:]
 
 
 def prepare_execution_record(
