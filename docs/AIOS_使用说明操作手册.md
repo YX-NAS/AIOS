@@ -110,6 +110,8 @@ aios run TASK-ID --executor codex-cli
 aios run attach TASK-ID --executor codex-cli --session-id session-123
 aios run resume TASK-ID
 aios run resume TASK-ID --latest-session
+aios run resume TASK-ID --open-terminal
+aios run resume TASK-ID --latest-session --open-terminal
 aios run status TASK-ID
 aios run finish TASK-ID --summary "完成说明"
 aios handoff TASK-ID --model gpt-5.5
@@ -521,10 +523,13 @@ aios --root /path/to/project run attach TASK-20260701-001 --executor codex-cli -
 ```bash
 aios --root /path/to/project run resume TASK-20260701-001
 aios --root /path/to/project run resume TASK-20260701-001 --latest-session
+aios --root /path/to/project run resume TASK-20260701-001 --open-terminal
+aios --root /path/to/project run resume TASK-20260701-001 --latest-session --open-terminal
 ```
 
 第一条优先使用已经挂接的会话引用。  
-第二条强制生成“继续最近会话”的命令。
+第二条强制生成“继续最近会话”的命令。  
+第三、第四条会在 macOS `Terminal.app` 中直接打开恢复命令，减少一次手动复制粘贴。
 
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 

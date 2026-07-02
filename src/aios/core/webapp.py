@@ -24,6 +24,7 @@ from aios.core.executions import (
     execution_summary,
     finish_manual_execution,
     latest_execution_for_task,
+    open_execution_resume_in_terminal,
     prepare_manual_execution,
     run_executor_with_auto_finish,
 )
@@ -339,6 +340,20 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         status=HTTPStatus.CREATED,
                     )
                 if parsed.path == "/api/run/resume":
+                    if bool(payload.get("open_terminal")):
+                        result = open_execution_resume_in_terminal(
+                            self.project_root,
+                            payload["task_id"],
+                            latest=bool(payload.get("latest")),
+                            terminal_app=(payload.get("terminal_app") or "Terminal").strip() or "Terminal",
+                        )
+                        return self._send_json(
+                            {
+                                "message": "Resume command opened in terminal.",
+                                **result,
+                            },
+                            status=HTTPStatus.CREATED,
+                        )
                     result = build_execution_resume(
                         self.project_root,
                         payload["task_id"],

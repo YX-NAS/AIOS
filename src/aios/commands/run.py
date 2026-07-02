@@ -10,6 +10,7 @@ from aios.core.executions import (
     build_execution_resume,
     finish_manual_execution,
     latest_execution_for_task,
+    open_execution_resume_in_terminal,
     prepare_manual_execution,
     run_executor_execution,
     run_executor_with_auto_finish,
@@ -44,6 +45,8 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--session-name", default=None, help="External session name used for attach/resume.")
     parser.add_argument("--session-note", default=None, help="Optional note recorded with one attached session.")
     parser.add_argument("--latest-session", action="store_true", help="Use the executor's continue-latest command for resume.")
+    parser.add_argument("--open-terminal", action="store_true", help="Open the generated resume command in Terminal on macOS.")
+    parser.add_argument("--terminal-app", default="Terminal", help="Terminal app used by --open-terminal. Defaults to Terminal.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
@@ -209,6 +212,21 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
     if args.run_target == "resume":
         if not args.task_id:
             raise ValueError("Task ID is required for `aios run resume`.")
+        if args.open_terminal:
+            result = open_execution_resume_in_terminal(
+                root,
+                args.task_id,
+                latest=bool(args.latest_session),
+                terminal_app=args.terminal_app,
+            )
+            print(f"Resume opened for {result['task']['id']}: {result['task']['title']}")
+            print(f"Execution: {result['execution']['execution_id']}")
+            print(f"Executor: {result['executor']['id']}")
+            print(f"Mode: {result['mode']}")
+            print(f"Session ref: {result.get('session_ref') or '-'}")
+            print(f"Terminal: {result['terminal']['app']}")
+            print(f"Command: {result['command']}")
+            return
         result = build_execution_resume(root, args.task_id, latest=bool(args.latest_session))
         print(f"Resume ready for {result['task']['id']}: {result['task']['title']}")
         print(f"Execution: {result['execution']['execution_id']}")
@@ -314,6 +332,9 @@ def _print_execution(execution: dict) -> None:
     print(f"Session captured: {'auto' if execution.get('executor_session_auto_captured') else ('manual' if execution.get('executor_session_attached_at') else '-')}")
     print(f"Resume command: {execution.get('executor_resume_command') or '-'}")
     print(f"Continue latest: {execution.get('executor_continue_command') or '-'}")
+    print(f"Terminal launch: {execution.get('executor_terminal_launch_status') or '-'}")
+    print(f"Terminal app: {execution.get('executor_terminal_launch_app') or '-'}")
+    print(f"Terminal launch at: {execution.get('executor_terminal_launch_at') or '-'}")
     print(f"Test command: {execution.get('test_command') or '-'}")
     print(f"Test result: {execution.get('test_result') or '-'}")
     print(f"Git clean before: {execution.get('git_is_clean_before')}")

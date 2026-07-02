@@ -56,7 +56,9 @@ const elements = {
   copyHandoffButton: document.getElementById("copyHandoffButton"),
   sessionAttachForm: document.getElementById("sessionAttachForm"),
   copyResumeCommandButton: document.getElementById("copyResumeCommandButton"),
+  openResumeInTerminalButton: document.getElementById("openResumeInTerminalButton"),
   copyContinueLatestCommandButton: document.getElementById("copyContinueLatestCommandButton"),
+  openLatestResumeInTerminalButton: document.getElementById("openLatestResumeInTerminalButton"),
   initForm: document.getElementById("initForm"),
   goalPlanForm: document.getElementById("goalPlanForm"),
   taskForm: document.getElementById("taskForm"),
@@ -378,6 +380,9 @@ function renderExecution(task, execution) {
     <div class="muted">会话来源：${execution.executor_session_auto_captured ? `自动提取 (${execution.executor_session_capture_source || "-"})` : (execution.executor_session_attached_at ? "手动挂接" : "-")}</div>
     <div class="muted">恢复命令：${execution.executor_resume_command || execution.executor_resume_last_command || "-"}</div>
     <div class="muted">继续最近会话：${execution.executor_continue_command || "-"}</div>
+    <div class="muted">终端继续：${execution.executor_terminal_launch_status || "-"}</div>
+    <div class="muted">终端应用：${execution.executor_terminal_launch_app || "-"}</div>
+    <div class="muted">终端继续时间：${execution.executor_terminal_launch_at || "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
@@ -782,6 +787,36 @@ elements.copyContinueLatestCommandButton.addEventListener("click", async () => {
     await refreshDashboard();
     setActivity(`已复制最近会话继续命令。\n执行器：${data.executor.id}\n命令：${data.command}`);
   }, "复制最近会话继续命令失败。");
+});
+
+elements.openResumeInTerminalButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/run/resume", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, latest: false, open_terminal: true }),
+    });
+    await refreshDashboard();
+    setActivity(`已在终端打开恢复命令。\n模式：${data.mode}\n终端：${data.terminal.app}\n命令：${data.command}`);
+  }, "在终端打开恢复命令失败。");
+});
+
+elements.openLatestResumeInTerminalButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/run/resume", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, latest: true, open_terminal: true }),
+    });
+    await refreshDashboard();
+    setActivity(`已在终端打开最近会话继续命令。\n终端：${data.terminal.app}\n命令：${data.command}`);
+  }, "在终端打开最近会话继续命令失败。");
 });
 
 elements.copyCcswitchButton.addEventListener("click", async () => {

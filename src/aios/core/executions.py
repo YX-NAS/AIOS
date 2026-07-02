@@ -20,6 +20,7 @@ from aios.core.handoff import build_handoff
 from aios.core.paths import require_aios
 from aios.core.router import route_task
 from aios.core.scoring import save_score
+from aios.core.terminal_resume import launch_command_in_terminal
 from aios.core.tasks import get_task, set_task_status
 from aios.core.workflow import finalize_task
 from aios.utils.json_utils import read_json, write_json
@@ -338,6 +339,33 @@ def build_execution_resume(
         "session_ref": session_ref,
         "command": command,
     }
+
+
+def open_execution_resume_in_terminal(
+    root: Path,
+    task_id: str,
+    latest: bool = False,
+    terminal_app: str = "Terminal",
+) -> dict:
+    result = build_execution_resume(root, task_id, latest=latest)
+    launch_result = launch_command_in_terminal(result["command"], app=terminal_app)
+    launched_at = now_iso()
+    updated_execution = update_execution(
+        root,
+        result["execution"]["execution_id"],
+        {
+            "executor_terminal_launch_supported": True,
+            "executor_terminal_launch_status": "opened",
+            "executor_terminal_launch_app": launch_result["app"],
+            "executor_terminal_launch_command": launch_result["command"],
+            "executor_terminal_launch_mode": result["mode"],
+            "executor_terminal_launch_at": launched_at,
+            "updated_at": launched_at,
+        },
+    )
+    result["execution"] = updated_execution
+    result["terminal"] = launch_result
+    return result
 
 
 def run_executor_with_auto_finish(
@@ -721,6 +749,12 @@ def prepare_execution_record(
         "executor_resume_last_command": None,
         "executor_resume_last_mode": None,
         "executor_resume_generated_at": None,
+        "executor_terminal_launch_supported": False,
+        "executor_terminal_launch_status": None,
+        "executor_terminal_launch_app": None,
+        "executor_terminal_launch_command": None,
+        "executor_terminal_launch_mode": None,
+        "executor_terminal_launch_at": None,
         "git_is_repo_before": git_state["is_git_repo"],
         "git_branch_before": git_state["branch"],
         "git_commit_before": git_state["commit"],

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import aios.core.terminal_resume as terminal_resume
 from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import latest_execution_for_task, load_executions
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
@@ -250,6 +251,88 @@ def test_run_attach_and_resume_cli_builds_session_commands(tmp_path: Path, capsy
     output = capsys.readouterr().out
     assert "Mode: latest" in output
     assert "codex resume --last" in output
+
+
+def test_run_resume_cli_can_open_terminal_on_macos(tmp_path: Path, monkeypatch, capsys) -> None:
+    launched: dict = {}
+
+    def fake_run(command: list[str], capture_output: bool, text: bool, check: bool):
+        launched["command"] = command
+        launched["capture_output"] = capture_output
+        launched["text"] = text
+        launched["check"] = check
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(terminal_resume.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_resume.subprocess, "run", fake_run)
+
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+    main(["--root", str(tmp_path), "run", "attach", task["id"], "--executor", "codex-cli", "--session-id", "session-123"])
+
+    assert main(["--root", str(tmp_path), "run", "resume", task["id"], "--open-terminal"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["executor_terminal_launch_status"] == "opened"
+    assert execution["executor_terminal_launch_app"] == "Terminal"
+    assert execution["executor_terminal_launch_mode"] == "attached"
+    assert execution["executor_terminal_launch_command"] == execution["executor_resume_last_command"]
+    assert launched["command"][0] == "osascript"
+    assert "session-123" in " ".join(launched["command"])
+    output = capsys.readouterr().out
+    assert "Resume opened for" in output
+
+
+def test_run_resume_api_can_open_terminal_on_macos(tmp_path: Path, monkeypatch) -> None:
+    launched: dict = {}
+
+    def fake_run(command: list[str], capture_output: bool, text: bool, check: bool):
+        launched["command"] = command
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(terminal_resume.sys, "platform", "darwin")
+    monkeypatch.setattr(terminal_resume.subprocess, "run", fake_run)
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task_id = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"]
+        request_json(handle.url, "/api/run/manual", method="POST", payload={"task_id": task_id, "start": True})
+        request_json(
+            handle.url,
+            "/api/run/attach",
+            method="POST",
+            payload={"task_id": task_id, "executor_id": "codex-cli", "session_id": "session-456"},
+        )
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/resume",
+            method="POST",
+            payload={"task_id": task_id, "open_terminal": True},
+        )
+        assert status_code == 201
+        assert payload["terminal"]["opened"] is True
+        assert payload["execution"]["executor_terminal_launch_status"] == "opened"
+        assert payload["execution"]["executor_terminal_launch_app"] == "Terminal"
+        assert "session-456" in " ".join(launched["command"])
+    finally:
+        handle.close()
 
 
 def test_ccswitch_export_cli_stdout_outputs_json(tmp_path: Path, capsys) -> None:
