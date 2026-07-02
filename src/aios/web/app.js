@@ -646,6 +646,7 @@ elements.dispatchNextButton.addEventListener("click", async () => {
     const autoCommit = completeForm.get("auto_commit") === "on";
     const autoPush = completeForm.get("auto_push") === "on";
     const autoPr = completeForm.get("auto_pr") === "on";
+    const autoConfirmBridgeSignal = completeForm.get("auto_confirm_bridge_signal") === "on";
     const data = await api("/api/run/dispatch", {
       method: "POST",
       body: JSON.stringify({
@@ -658,6 +659,7 @@ elements.dispatchNextButton.addEventListener("click", async () => {
         auto_commit: autoCommit,
         auto_push: autoPush,
         auto_pr: autoPr,
+        auto_confirm_bridge_signal: autoConfirmBridgeSignal,
       }),
     });
     await refreshDashboard();
@@ -678,6 +680,10 @@ elements.dispatchNextButton.addEventListener("click", async () => {
       : "";
     if (data.auto_finished && !data.dispatched) {
       setActivity(`已自动完成 ${data.task.id}。\n状态：${data.execution.status}${data.verification ? `\n验证：${data.verification.summary}` : ""}${gitLine}${pushLine}${prLine}`);
+      return;
+    }
+    if (data.auto_confirmed_bridge && !data.dispatched) {
+      setActivity(`已自动确认 Bridge 恢复信号。\n任务：${data.task.id}\nBridge 确认：${data.execution.ccswitch_bridge_confirmation_status}\n下一步：${data.scheduler_after?.next_action || "-"}`);
       return;
     }
     const verificationLine = data.verification ? `\n验证：${data.verification.summary}` : "";

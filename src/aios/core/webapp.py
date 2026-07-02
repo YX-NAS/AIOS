@@ -464,6 +464,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         allow_protected_push=bool(payload.get("allow_protected_push")),
                         auto_pr=bool(payload.get("auto_pr")),
                         pr_base_branch=(payload.get("pr_base_branch") or "main").strip() or "main",
+                        auto_confirm_bridge_signal=bool(payload.get("auto_confirm_bridge_signal")),
                     )
                     return self._send_json(
                         {

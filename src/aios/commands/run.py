@@ -41,6 +41,7 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--allow-protected-push", action="store_true", help="Allow auto push on protected branches like main/master.")
     parser.add_argument("--auto-pr", action="store_true", help="Automatically create a draft PR after successful auto push.")
     parser.add_argument("--pr-base-branch", default="main", help="Base branch used for auto PR draft creation. Defaults to main.")
+    parser.add_argument("--auto-confirm-bridge-signal", action="store_true", help="Auto-confirm bridge when a local resume signal has been detected.")
     parser.add_argument("--session-id", default=None, help="External session id used for attach/resume.")
     parser.add_argument("--session-name", default=None, help="External session name used for attach/resume.")
     parser.add_argument("--session-note", default=None, help="Optional note recorded with one attached session.")
@@ -69,6 +70,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             allow_protected_push=args.allow_protected_push,
             auto_pr=args.auto_pr,
             pr_base_branch=args.pr_base_branch,
+            auto_confirm_bridge_signal=args.auto_confirm_bridge_signal,
         )
         if not result["progressed"]:
             print(f"Auto dispatch skipped: {result['reason']}")
@@ -87,6 +89,12 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             _print_git_commit(result.get("git_commit"))
             _print_git_push(result.get("git_push"))
             _print_git_pr(result.get("git_pr"))
+            return
+        if result.get("auto_confirmed_bridge") and not result["dispatched"]:
+            print(f"Bridge auto-confirmed: {result['task']['id']} {result['task']['title']}")
+            print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
+            print(f"Bridge confirmation: {result['execution'].get('ccswitch_bridge_confirmation_status')}")
+            print(f"Next action: {result['scheduler_after'].get('next_action') or '-'}")
             return
         execution = result["execution"]
         route = result["route"]

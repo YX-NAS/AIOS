@@ -595,6 +595,16 @@ aios --root /path/to/project ccswitch confirm TASK-20260701-001 --status confirm
 此外，bridge 在真正拉起终端恢复命令前，会自动写一个本地 signal 文件。  
 这能让 AIOS 自动看到“终端恢复已启动”，即使你还没有手动确认 bridge 最终结果。
 
+如果你希望在检测到这个 signal 后，由 AIOS 自动把 bridge 收口成 `confirmed_ready`，可以显式开启：
+
+```bash
+aios --root /path/to/project run auto --auto-confirm-bridge-signal
+```
+
+这个能力默认关闭。  
+原因很简单：signal 只能证明恢复命令已经发出，不能百分之百证明你已经恢复到了正确会话。  
+所以它是“减少一次重复人工确认”的受控自动化，而不是完全替代外部状态确认。
+
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 
 推荐顺序：

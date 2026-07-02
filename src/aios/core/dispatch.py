@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aios.core.ccswitch import confirm_ccswitch_bridge
 from aios.core.executions import auto_finish_execution, run_executor_with_auto_finish
 from aios.core.executors import get_default_executor
 from aios.core.scheduler import scheduler_summary
@@ -25,6 +26,7 @@ def auto_progress_next_step(
     allow_protected_push: bool = False,
     auto_pr: bool = False,
     pr_base_branch: str = "main",
+    auto_confirm_bridge_signal: bool = False,
 ) -> dict:
     before = scheduler_summary(root)
     next_action = before.get("next_action")
@@ -59,12 +61,39 @@ def auto_progress_next_step(
             **finish_result,
         }
 
+    if next_action == "validate_resumed_session" and auto_confirm_bridge_signal and before.get("next_task_id"):
+        confirm_result = confirm_ccswitch_bridge(
+            root,
+            before["next_task_id"],
+            confirmation_status="confirmed_ready",
+            note="Auto-confirmed from bridge resume signal.",
+        )
+        after = scheduler_summary(root)
+        return {
+            "progressed": True,
+            "dispatched": False,
+            "auto_finished": False,
+            "auto_confirmed_bridge": True,
+            "executor": None,
+            "scheduler_before": before,
+            "scheduler_after": after,
+            "scheduler_item": next_scheduler_item(after),
+            "reason": "Bridge resume signal detected and auto-confirmed.",
+            "task": confirm_result["task"],
+            "route": None,
+            "handoff": None,
+            "execution": confirm_result["execution"],
+            "bridge": confirm_result["bridge"],
+            "bridge_path": confirm_result["bridge_path"],
+        }
+
     candidate = next_dispatch_candidate(before["items"])
     if candidate is None:
         return {
             "progressed": False,
             "dispatched": False,
             "auto_finished": False,
+            "auto_confirmed_bridge": False,
             "executor": get_default_executor(None),
             "scheduler_before": before,
             "scheduler_after": before,
@@ -101,6 +130,7 @@ def auto_progress_next_step(
     return {
         "progressed": True,
         "dispatched": True,
+        "auto_confirmed_bridge": False,
         "scheduler_before": before,
         "scheduler_after": scheduler_summary(root),
         "scheduler_item": candidate,
@@ -114,6 +144,7 @@ def auto_dispatch_next_task(
     model: str | None = None,
     refresh_pack: bool = False,
     note: str | None = None,
+    auto_confirm_bridge_signal: bool = False,
 ) -> dict:
     return auto_progress_next_step(
         root,
@@ -121,6 +152,7 @@ def auto_dispatch_next_task(
         model=model,
         refresh_pack=refresh_pack,
         note=note,
+        auto_confirm_bridge_signal=auto_confirm_bridge_signal,
     )
 
 

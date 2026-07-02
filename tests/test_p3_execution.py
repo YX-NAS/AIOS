@@ -1005,6 +1005,45 @@ def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -
     assert execution["status"] == "review_pending"
 
 
+def test_run_auto_cli_can_auto_confirm_bridge_signal(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", lambda deeplink: None)
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: None)
+
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--model", "gpt-5.5-coder", "--start"])
+    main(["--root", str(tmp_path), "run", "attach", task["id"], "--executor", "codex-cli", "--session-id", "session-123"])
+    main(["--root", str(tmp_path), "ccswitch", "bridge", task["id"], "--open"])
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    signal_path = tmp_path / execution["ccswitch_bridge_resume_signal_path"]
+    signal_path.write_text(json.dumps({"started_at": "2026-07-02T12:00:00"}, ensure_ascii=False), encoding="utf-8")
+
+    assert main(["--root", str(tmp_path), "run", "auto", "--auto-confirm-bridge-signal"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["ccswitch_bridge_confirmation_status"] == "confirmed_ready"
+    assert execution["ccswitch_bridge_confirmation_note"] == "Auto-confirmed from bridge resume signal."
+
+
 def test_run_executor_cli_can_auto_finish_after_verification(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     main(["--root", str(tmp_path), "init", "--name", "demo"])
@@ -1524,6 +1563,54 @@ def test_run_dispatch_api_blocks_when_bridge_confirmation_is_pending(tmp_path: P
         assert status_code == 201
         assert payload["dispatched"] is False
         assert "待确认的 bridge" in payload["reason"]
+    finally:
+        handle.close()
+
+
+def test_run_dispatch_api_can_auto_confirm_bridge_signal(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", lambda deeplink: None)
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: None)
+
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(handle.url, "/api/run/manual", method="POST", payload={"task_id": task["id"], "model": "gpt-5.5-coder", "start": True})
+        request_json(handle.url, "/api/run/attach", method="POST", payload={"task_id": task["id"], "executor_id": "codex-cli", "session_id": "session-xyz"})
+        bridge_status, bridge_payload = request_json(handle.url, "/api/ccswitch/bridge", method="POST", payload={"task_id": task["id"], "app": "codex", "open": True})
+        assert bridge_status == 201
+        signal_path = tmp_path / bridge_payload["bridge"]["resume_signal_path"]
+        signal_path.write_text(json.dumps({"started_at": "2026-07-02T12:00:00"}, ensure_ascii=False), encoding="utf-8")
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={"auto_confirm_bridge_signal": True},
+        )
+        assert status_code == 201
+        assert payload["progressed"] is True
+        assert payload["dispatched"] is False
+        assert payload["auto_confirmed_bridge"] is True
+        assert payload["execution"]["ccswitch_bridge_confirmation_status"] == "confirmed_ready"
+        assert payload["execution"]["ccswitch_bridge_confirmation_note"] == "Auto-confirmed from bridge resume signal."
+        assert payload["scheduler_after"]["next_action"] == "monitor_running"
     finally:
         handle.close()
 
