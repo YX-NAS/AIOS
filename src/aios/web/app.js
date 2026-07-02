@@ -384,6 +384,7 @@ function renderExecution(task, execution) {
     <div class="muted">Bridge 模式：${execution.ccswitch_bridge_mode || "-"}</div>
     <div class="muted">Bridge 状态：${execution.ccswitch_bridge_status || "-"}</div>
     <div class="muted">Bridge 确认：${execution.ccswitch_bridge_confirmation_status || "-"}</div>
+    <div class="muted">Bridge 有效确认：${execution.ccswitch_bridge_effective_confirmation_status || execution.ccswitch_bridge_confirmation_status || "-"}</div>
     <div class="muted">Bridge 确认时间：${execution.ccswitch_bridge_confirmed_at || "-"}</div>
     <div class="muted">Bridge 确认备注：${execution.ccswitch_bridge_confirmation_note || "-"}</div>
     <div class="muted">Bridge 恢复信号：${execution.ccswitch_bridge_resume_signal_status || "-"}</div>
@@ -424,6 +425,7 @@ function renderScheduler(task) {
     <div class="muted">下一步：${item.next_action || "-"}</div>
     <div class="muted">原因：${item.reason || "-"}</div>
     <div class="muted">Bridge 确认：${item.bridge_confirmation_status || "-"}</div>
+    <div class="muted">Bridge 信号：${item.bridge_resume_signal_status || "-"}</div>
     <div class="muted">Pack 质量：${item.pack_quality || "-"}</div>
     <div class="muted">未满足依赖：${(item.unmet_dependencies || []).join(", ") || "-"}</div>
     ${warnings}

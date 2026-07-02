@@ -25,7 +25,7 @@ SESSION_HANDOFF_VERSION = "1"
 BRIDGE_VERSION = "1"
 SUPPORTED_APPS = {"claude", "codex", "gemini", "opencode", "openclaw"}
 BRIDGE_SUCCESS_STATUSES = {"completed", "prepared"}
-BRIDGE_CONFIRMATION_STATUSES = {"not_requested", "pending_confirmation", "confirmed_ready", "confirmed_failed"}
+BRIDGE_CONFIRMATION_STATUSES = {"not_requested", "pending_confirmation", "signal_detected", "confirmed_ready", "confirmed_failed"}
 
 
 def export_ccswitch_payload(root: Path, task_id: str, model: str | None = None) -> dict:
@@ -665,12 +665,27 @@ def with_bridge_runtime_signal(root: Path, execution: dict | None) -> dict | Non
     if not execution:
         return None
     signal = load_bridge_resume_signal(root, execution)
-    if not signal:
-        return execution
     enriched = dict(execution)
-    enriched["ccswitch_bridge_resume_signal_status"] = "started"
-    enriched["ccswitch_bridge_resume_started_at"] = signal.get("started_at")
+    if signal:
+        enriched["ccswitch_bridge_resume_signal_status"] = "started"
+        enriched["ccswitch_bridge_resume_started_at"] = signal.get("started_at")
+    else:
+        enriched["ccswitch_bridge_resume_signal_status"] = enriched.get("ccswitch_bridge_resume_signal_status") or "pending"
+        enriched["ccswitch_bridge_resume_started_at"] = enriched.get("ccswitch_bridge_resume_started_at")
+    enriched["ccswitch_bridge_effective_confirmation_status"] = effective_bridge_confirmation_status(enriched)
     return enriched
+
+
+def effective_bridge_confirmation_status(execution: dict | None) -> str | None:
+    if not execution:
+        return None
+    confirmation = str(execution.get("ccswitch_bridge_confirmation_status") or "").strip()
+    if confirmation in {"confirmed_ready", "confirmed_failed"}:
+        return confirmation
+    signal_status = str(execution.get("ccswitch_bridge_resume_signal_status") or "").strip()
+    if signal_status == "started":
+        return "signal_detected"
+    return confirmation or None
 
 
 def _resolve_task_execution(root: Path, task_id: str, app: str, model: str | None) -> tuple[dict, dict, str, str]:

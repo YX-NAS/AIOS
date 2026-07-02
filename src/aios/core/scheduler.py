@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from aios.core.ccswitch import with_bridge_runtime_signal
 from aios.core.context_builder import inspect_context_pack
 from aios.core.executions import latest_execution_for_task
 from aios.core.tasks import get_task, load_tasks
@@ -44,8 +45,8 @@ def scheduler_summary(root: Path) -> dict:
 
 
 def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> dict:
-    execution = latest_execution_for_task(root, task["id"])
-    bridge_confirmation_status = str(execution.get("ccswitch_bridge_confirmation_status") or "").strip() if execution else ""
+    execution = with_bridge_runtime_signal(root, latest_execution_for_task(root, task["id"]))
+    bridge_confirmation_status = str(execution.get("ccswitch_bridge_effective_confirmation_status") or execution.get("ccswitch_bridge_confirmation_status") or "").strip() if execution else ""
     dependency_ids = task.get("depends_on_task_ids") or []
     unmet_dependencies = [task_id for task_id in dependency_ids if task_map.get(task_id, {}).get("status") != "done"]
     pack_quality = "unknown"
@@ -71,6 +72,10 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         scheduler_state = "failed"
         next_action = "retry_bridge"
         reason = execution.get("ccswitch_bridge_confirmation_note") or execution.get("ccswitch_bridge_error") or "Bridge 已确认失败，需重新切换或重试。"
+    elif execution and bridge_confirmation_status == "signal_detected":
+        scheduler_state = "bridge_confirmation"
+        next_action = "validate_resumed_session"
+        reason = "已检测到终端恢复信号，建议先确认恢复到正确会话后再继续。"
     elif execution and bridge_confirmation_status == "pending_confirmation":
         scheduler_state = "bridge_confirmation"
         next_action = "confirm_bridge"
@@ -105,4 +110,5 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         "pack_warnings": warnings,
         "latest_execution_status": execution.get("status") if execution else None,
         "bridge_confirmation_status": bridge_confirmation_status or None,
+        "bridge_resume_signal_status": execution.get("ccswitch_bridge_resume_signal_status") if execution else None,
     }

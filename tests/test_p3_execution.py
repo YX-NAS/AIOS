@@ -839,6 +839,7 @@ def test_task_api_enriches_execution_with_bridge_signal(tmp_path: Path, monkeypa
         assert status_code == 200
         assert task_payload["execution"]["ccswitch_bridge_resume_signal_status"] == "started"
         assert task_payload["execution"]["ccswitch_bridge_resume_started_at"] == "2026-07-02T12:00:00"
+        assert task_payload["execution"]["ccswitch_bridge_effective_confirmation_status"] == "signal_detected"
     finally:
         handle.close()
 
