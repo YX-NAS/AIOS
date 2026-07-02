@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-8`，核心功能包括：
+当前版本已交付到 `P3-10`，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -19,6 +19,7 @@
 - `P3-6` 执行总览增强已落地首版调度摘要与下一步动作提示
 - `P3-7` 自动调度执行链路原型已落地首版 CLI / API / Web 派发能力
 - `P3-8` 自动完成收口已落地首版 CLI / API / Web 自动回写能力
+- `P3-10` 自动 Git 提交已落地首版 CLI / API / Web 自动本地提交能力
 
 已知短板：
 
@@ -28,6 +29,7 @@
 - Context Pack 还缺分层与质量校验
 - 自动化还没有接管 `ccswitch` 和真实会话切换
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
+- 只支持本地自动 commit，还没有自动 push / PR
 
 ---
 
@@ -77,8 +79,9 @@
 | P3-7 | 自动调度执行链路原型 | `aios run auto` / `/api/run/dispatch` 能按调度结果自动派发下一条 `ready` 任务 |
 | P3-8 | 自动完成收口 | `run auto --auto-finish` / `run approve` / Web 自动推进支持验证通过后自动 finish |
 | P3-9 | 成本统计 | 记录每次调用的模型、token 数、估算费用，Web UI 可查看 |
-| P3-10 | 自动 Git 提交 | 任务完成后自动 commit 变更，commit message 由 AIOS 生成 |
+| P3-10 | 自动 Git 提交 | `run finish --auto-commit` / `run auto --auto-commit` 支持受控本地提交 |
 | P3-11 | 外部模型切换接管 | 评估并接管 `ccswitch` / 会话切换能力，缩短人工切换路径 |
+| P3-12 | 自动 Push / PR | 任务完成后可选择自动 push 并生成 PR 草案 |
 
 ### P4 — 平台化
 
@@ -94,8 +97,8 @@
 ## 近期重点（接下来 2 周）
 
 1. P3-9：补齐成本与执行统计
-2. P3-10：设计自动 Git 提交流程
-3. P3-11：验证外部模型切换与会话接管路径
+2. P3-11：验证外部模型切换与会话接管路径
+3. P3-12：设计自动 Push / PR 边界
 4. P3-4：补齐任务树可视化和更细粒度编辑
 5. P0-2：持续同步操作手册与规划文档
 
@@ -105,7 +108,7 @@
 
 - 在不破坏现有半自动流程的前提下，把自动派发与自动收口逐步接上
 - 继续解决复杂目标拆解过浅的问题，而不是只堆执行入口
-- 继续补齐成本、Git、模型切换这三块，才能接近完整自动交付链
+- 继续补齐成本、模型切换、远程交付这三块，才能接近完整自动交付链
 
 专项规划见 [docs/plans/aios-system-improvement-roadmap.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/plans/aios-system-improvement-roadmap.md)。
 
@@ -124,3 +127,4 @@
 | 2026-07-02 | 下一阶段优先补执行器适配、任务树、Context Engine | 这三项直接对应当前最大痛点，也最能放大 AIOS 的管理价值 |
 | 2026-07-02 | 自动调度先只派发 `ready` 任务，不自动 finish | 先把调度决策接入执行链路，再逐步扩到 review 收口 |
 | 2026-07-02 | 自动收口要求显式 `summary`，验证失败时保持 `review_pending` | 先保证收口可控、可审计，避免误把失败任务标记为完成 |
+| 2026-07-02 | 自动 Git 提交只在执行开始前非 `.aios/` 工作区干净时生效 | 避免把用户已有脏改动误一起提交，同时不让 `.aios/` 元数据阻塞自动化 |

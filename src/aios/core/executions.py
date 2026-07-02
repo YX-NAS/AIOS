@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 from aios.core.executors import build_executor_command, get_executor, shell_preview
+from aios.core.git_commit import auto_commit_task_changes, git_snapshot
 from aios.core.handoff import build_handoff
 from aios.core.paths import require_aios
 from aios.core.router import route_task
@@ -243,6 +244,7 @@ def run_executor_with_auto_finish(
     verify_command: str | None = None,
     score: int | None = None,
     score_note: str | None = None,
+    auto_commit: bool = False,
 ) -> dict:
     result = run_executor_execution(
         root,
@@ -255,6 +257,7 @@ def run_executor_with_auto_finish(
     result["auto_finished"] = False
     result["verification"] = None
     result["reason"] = None
+    result["git_commit"] = None
     if not auto_finish:
         return result
     auto_finish_result = auto_finish_execution(
@@ -265,10 +268,12 @@ def run_executor_with_auto_finish(
         verify_command=verify_command,
         score=score,
         score_note=score_note,
+        auto_commit=auto_commit,
     )
     result["auto_finished"] = auto_finish_result["finished"]
     result["verification"] = auto_finish_result.get("verification")
     result["reason"] = auto_finish_result.get("reason")
+    result["git_commit"] = auto_finish_result.get("git_commit")
     if auto_finish_result["finished"]:
         result["task"] = auto_finish_result["task"]
         result["execution"] = auto_finish_result["execution"]
@@ -286,6 +291,7 @@ def finish_manual_execution(
     test_result: str | None = None,
     score: int | None = None,
     score_note: str | None = None,
+    auto_commit: bool = False,
 ) -> dict:
     executions = load_executions(root)
     active = latest_open_execution_for_task(root, task_id)
@@ -323,9 +329,30 @@ def finish_manual_execution(
     if score is not None:
         save_score(root, task_id, resolved_model or "unknown", score, score_note, task.get("type"))
 
+    commit_result = None
+    if auto_commit:
+        commit_result = auto_commit_task_changes(root, execution or latest_execution_for_task(root, task_id) or {}, task, summary)
+        if execution:
+            update_execution(
+                root,
+                execution["execution_id"],
+                {
+                    "auto_commit_enabled": True,
+                    "auto_commit_status": "committed" if commit_result.get("committed") else "skipped",
+                    "auto_commit_reason": commit_result.get("reason"),
+                    "git_commit_after": commit_result.get("commit"),
+                    "git_branch_after": commit_result.get("branch"),
+                    "auto_commit_paths": commit_result.get("paths"),
+                    "auto_commit_subject": commit_result.get("subject"),
+                    "updated_at": now_iso(),
+                },
+            )
+            execution = latest_execution_for_task(root, task_id)
+
     return {
         "task": task,
         "execution": execution or latest_execution_for_task(root, task_id),
+        "git_commit": commit_result,
     }
 
 
@@ -337,6 +364,7 @@ def auto_finish_execution(
     verify_command: str | None = None,
     score: int | None = None,
     score_note: str | None = None,
+    auto_commit: bool = False,
 ) -> dict:
     if not summary:
         raise ValueError("Use `--summary` when enabling auto finish.")
@@ -378,6 +406,7 @@ def auto_finish_execution(
         test_result=final_test_result,
         score=score,
         score_note=score_note,
+        auto_commit=auto_commit,
     )
     return {
         "finished": True,
@@ -438,6 +467,7 @@ def prepare_execution_record(
     timestamp = now_iso()
     executions = load_executions(root)
     active = latest_active_execution_for_task(root, task["id"])
+    git_state = git_snapshot(root)
 
     if active:
         for item in executions:
@@ -452,6 +482,11 @@ def prepare_execution_record(
             item["operator_note"] = note
             item["executor_id"] = executor.get("id") if executor else None
             item["executor_label"] = executor.get("label") if executor else None
+            item["git_is_repo_before"] = git_state["is_git_repo"]
+            item["git_branch_before"] = git_state["branch"]
+            item["git_commit_before"] = git_state["commit"]
+            item["git_status_before"] = git_state["status_map"]
+            item["git_is_clean_before"] = git_state["is_clean"]
             if status == "running":
                 item["started_at"] = item.get("started_at") or timestamp
             item["updated_at"] = timestamp
@@ -482,6 +517,18 @@ def prepare_execution_record(
         "executor_log_path": None,
         "executor_stdout_excerpt": None,
         "executor_stderr_excerpt": None,
+        "git_is_repo_before": git_state["is_git_repo"],
+        "git_branch_before": git_state["branch"],
+        "git_commit_before": git_state["commit"],
+        "git_status_before": git_state["status_map"],
+        "git_is_clean_before": git_state["is_clean"],
+        "git_branch_after": None,
+        "git_commit_after": None,
+        "auto_commit_enabled": False,
+        "auto_commit_status": None,
+        "auto_commit_reason": None,
+        "auto_commit_paths": None,
+        "auto_commit_subject": None,
         "updated_at": timestamp,
     }
     executions.append(execution)

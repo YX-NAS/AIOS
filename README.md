@@ -12,6 +12,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 执行总览与调度前置状态方案见 [docs/P3_6_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_6_DESIGN.md)。
 自动调度执行链路原型方案见 [docs/P3_7_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_7_DESIGN.md)。
 自动完成收口方案见 [docs/P3_8_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_8_DESIGN.md)。
+自动 Git 提交方案见 [docs/P3_10_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_10_DESIGN.md)。
 
 ## MVP 边界
 
@@ -42,6 +43,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 - `aios run TASK-ID --executor EXECUTOR-ID` 可直接调起受控 CLI 执行器
 - `aios run auto [--executor ...]` 可自动选择下一条 `ready` 任务并派发到执行器
 - `aios run ... --auto-finish --summary "..." --verify-command "..."` 可在验证通过后自动完成任务回写
+- `aios run ... --auto-commit` 可在受控条件下自动生成本地 Git commit
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
 ## 安装与运行
@@ -82,7 +84,9 @@ aios run --manual TASK-20260630-001 --start
 aios run TASK-20260630-001 --executor codex-cli
 aios run auto --executor codex-cli
 aios run auto --executor codex-cli --auto-finish --summary "完成登录功能并通过测试" --verify-command "pytest -q"
+aios run auto --executor codex-cli --auto-finish --summary "完成登录功能并通过测试" --verify-command "pytest -q" --auto-commit
 aios run approve TASK-20260630-001 --summary "确认交付" --verify-command "pytest -q"
+aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试" --auto-commit
 aios run status TASK-20260630-001
 aios ccswitch export TASK-20260630-001
 aios run finish TASK-20260630-001 --summary "完成登录功能并通过测试"
@@ -134,6 +138,7 @@ http://127.0.0.1:8765
 - 通过执行器适配层调起 CLI 自动执行
 - 自动派发下一条可执行任务
 - 自动推进 `review_pending -> done`
+- 自动完成后本地 Git 提交
 - 生成 Context Pack
 - 导出 `ccswitch` 适配文件或复制 JSON
 - 生成并复制任务交接单
@@ -208,6 +213,7 @@ python -m pytest
 - `aios run TASK-ID --executor ...` 能调起受控 CLI 执行器，并记录命令、退出状态和日志；
 - `aios run auto` 能按调度状态自动选择下一条 `ready` 任务并派发执行；
 - `aios run ... --auto-finish` 能在验证命令通过后自动完成回写；
+- `aios run ... --auto-commit` 能在执行开始前工作区干净时自动提交本地 Git 变更；
 - `aios ccswitch export` 能导出可追溯的 `ccswitch` 适配 JSON；
 - `aios run finish` 能更新执行记录、任务状态、`changelog.md` 和 `memory.md`；
 - `aios complete` 能更新任务状态、`changelog.md` 和 `memory.md`；

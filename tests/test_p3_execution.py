@@ -23,6 +23,21 @@ def request_json(base_url: str, path: str, method: str = "GET", payload: dict | 
         return response.status, json.loads(response.read().decode("utf-8"))
 
 
+def init_git_repo(root: Path) -> None:
+    import subprocess
+
+    subprocess.run(["git", "init"], cwd=str(root), capture_output=True, check=False, timeout=10)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(root), capture_output=True, check=False, timeout=5)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=str(root), capture_output=True, check=False, timeout=5)
+
+
+def git_commit_all(root: Path, message: str) -> None:
+    import subprocess
+
+    subprocess.run(["git", "add", "."], cwd=str(root), capture_output=True, check=False, timeout=10)
+    subprocess.run(["git", "commit", "-m", message], cwd=str(root), capture_output=True, check=False, timeout=10)
+
+
 def test_run_manual_cli_creates_and_finishes_execution(tmp_path: Path) -> None:
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
@@ -333,6 +348,69 @@ def test_run_executor_cli_can_auto_finish_after_verification(tmp_path: Path, mon
     assert updated_task["status"] == "done"
 
 
+def test_run_finish_cli_can_auto_commit_when_repo_was_clean(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
+    init_git_repo(tmp_path)
+    (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
+    git_commit_all(tmp_path, "init")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    git_commit_all(tmp_path, "add aios")
+    main(["--root", str(tmp_path), "task", "create", "更新主脚本", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+    (tmp_path / "main.py").write_text("print('demo 2')\n", encoding="utf-8")
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            "finish",
+            task["id"],
+            "--summary",
+            "更新主脚本完成",
+            "--auto-commit",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["auto_commit_status"] == "committed"
+    assert execution["git_commit_after"]
+
+
+def test_run_finish_cli_skips_auto_commit_when_repo_was_dirty_before_execution(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
+    init_git_repo(tmp_path)
+    (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
+    git_commit_all(tmp_path, "init")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    git_commit_all(tmp_path, "add aios")
+    (tmp_path / "preexisting.txt").write_text("dirty\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "task", "create", "更新主脚本", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--start"])
+    (tmp_path / "main.py").write_text("print('demo 2')\n", encoding="utf-8")
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            "finish",
+            task["id"],
+            "--summary",
+            "更新主脚本完成",
+            "--auto-commit",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["auto_commit_status"] == "skipped"
+    assert "not clean" in (execution["auto_commit_reason"] or "")
+
+
 def test_run_execute_api_reports_failed_executor(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_executor(
@@ -451,6 +529,55 @@ def test_run_dispatch_api_can_auto_finish_review_pending_task(tmp_path: Path, mo
         assert payload["auto_finished"] is True
         assert payload["task"]["status"] == "done"
         assert payload["execution"]["status"] == "finished"
+    finally:
+        handle.close()
+
+
+def test_run_execute_api_can_auto_commit_after_finish(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path.parent / f"{tmp_path.name}-state"))
+    init_git_repo(tmp_path)
+    (tmp_path / "main.py").write_text("print('demo')\n", encoding="utf-8")
+    git_commit_all(tmp_path, "init")
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        git_commit_all(tmp_path, "add aios")
+        create_executor(
+            None,
+            "git-auto-cli",
+            label="Git Auto CLI",
+            kind="command",
+            enabled=True,
+            rank=1,
+            binary="python3",
+            args=[
+                "-c",
+                "from pathlib import Path; Path('main.py').write_text(\"print('demo 2')\\n\", encoding='utf-8'); print('ok')",
+                "{prompt}",
+            ],
+            timeout_seconds=30,
+            pass_model_as_flag=False,
+            env={},
+        )
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": task["id"],
+                "executor_id": "git-auto-cli",
+                "auto_finish": True,
+                "summary": "更新完成",
+                "verify_command": "python3 -c \"print('ok')\"",
+                "auto_commit": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["auto_finished"] is True
+        assert payload["git_commit"]["committed"] is True
     finally:
         handle.close()
 

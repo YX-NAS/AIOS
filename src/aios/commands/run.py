@@ -32,6 +32,7 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--score-note", default=None, help="Optional note about the score.")
     parser.add_argument("--auto-finish", action="store_true", help="Automatically finish one review_pending execution when possible.")
     parser.add_argument("--verify-command", default=None, help="Verification command to run before auto finish.")
+    parser.add_argument("--auto-commit", action="store_true", help="Automatically commit git changes after finish when the repo was clean before execution.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
@@ -48,6 +49,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             verify_command=args.verify_command,
             score=args.score,
             score_note=args.score_note,
+            auto_commit=args.auto_commit,
         )
         if not result["progressed"]:
             print(f"Auto dispatch skipped: {result['reason']}")
@@ -63,6 +65,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
             if result.get("verification"):
                 print(f"Verification: {result['verification']['summary']}")
+            _print_git_commit(result.get("git_commit"))
             return
         execution = result["execution"]
         route = result["route"]
@@ -83,6 +86,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Log: {execution['executor_log_path']}")
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
+        _print_git_commit(result.get("git_commit"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
         elif execution["status"] == "review_pending":
@@ -102,6 +106,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             verify_command=args.verify_command,
             score=args.score,
             score_note=args.score_note,
+            auto_commit=args.auto_commit,
         )
         if not result["finished"]:
             print(f"Auto finish skipped: {result['reason']}")
@@ -111,6 +116,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         print(f"Auto finished {result['task']['id']}: {result['task']['title']}")
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
+        _print_git_commit(result.get("git_commit"))
         print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
         return
 
@@ -138,10 +144,12 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             test_result=args.test_result,
             score=args.score,
             score_note=args.score_note,
+            auto_commit=args.auto_commit,
         )
         print(f"Finished {result['task']['id']}: {result['task']['title']}")
         if result["execution"]:
             print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
+        _print_git_commit(result.get("git_commit"))
         return
 
     task_id = args.run_target
@@ -162,6 +170,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             verify_command=args.verify_command,
             score=args.score,
             score_note=args.score_note,
+            auto_commit=args.auto_commit,
         )
         execution = result["execution"]
         route = result["route"]
@@ -180,6 +189,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Log: {execution['executor_log_path']}")
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
+        _print_git_commit(result.get("git_commit"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
         elif execution["status"] == "review_pending":
@@ -229,3 +239,16 @@ def _print_execution(execution: dict) -> None:
     print(f"Log: {execution.get('executor_log_path') or '-'}")
     print(f"Test command: {execution.get('test_command') or '-'}")
     print(f"Test result: {execution.get('test_result') or '-'}")
+    print(f"Git clean before: {execution.get('git_is_clean_before')}")
+    print(f"Auto commit: {execution.get('auto_commit_status') or '-'}")
+    print(f"Git commit after: {execution.get('git_commit_after') or '-'}")
+
+
+def _print_git_commit(commit: dict | None) -> None:
+    if not commit:
+        return
+    if commit.get("committed"):
+        print(f"Git commit: {commit.get('commit')} on {commit.get('branch')}")
+        return
+    if commit.get("reason"):
+        print(f"Git commit skipped: {commit['reason']}")

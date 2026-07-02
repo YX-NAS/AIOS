@@ -274,6 +274,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         (payload.get("verify_command") or "").strip() or None,
                         int(payload["score"]) if payload.get("score") is not None else None,
                         (payload.get("score_note") or "").strip() or None,
+                        bool(payload.get("auto_commit")),
                     )
                     return self._send_json(
                         {
@@ -283,6 +284,10 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "handoff": result["handoff"],
                             "execution": result["execution"],
                             "executor": result["executor"],
+                            "auto_finished": result.get("auto_finished"),
+                            "verification": result.get("verification"),
+                            "reason": result.get("reason"),
+                            "git_commit": result.get("git_commit"),
                         },
                         status=HTTPStatus.CREATED,
                     )
@@ -299,6 +304,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         verify_command=(payload.get("verify_command") or "").strip() or None,
                         score=int(payload["score"]) if payload.get("score") is not None else None,
                         score_note=(payload.get("score_note") or "").strip() or None,
+                        auto_commit=bool(payload.get("auto_commit")),
                     )
                     return self._send_json(
                         {
@@ -320,6 +326,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         test_result=(payload.get("test_result") or "").strip() or None,
                         score=int(payload["score"]) if payload.get("score") is not None else None,
                         score_note=(payload.get("score_note") or "").strip() or None,
+                        auto_commit=bool(payload.get("auto_commit")),
                     )
                     return self._send_json({"message": "Task completed.", **result})
                 if parsed.path == "/api/complete":
@@ -335,6 +342,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         test_result=(payload.get("test_result") or "").strip() or None,
                         score=int(payload["score"]) if payload.get("score") is not None else None,
                         score_note=(payload.get("score_note") or "").strip() or None,
+                        auto_commit=bool(payload.get("auto_commit")),
                     )
                     return self._send_json({"message": "Task completed.", **result})
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")
