@@ -11,6 +11,7 @@ const state = {
   currentExecution: null,
   scheduler: null,
   planPreview: null,
+  sessionSuggestions: [],
   selectedTaskId: null,
 };
 
@@ -38,6 +39,7 @@ const elements = {
   routeCard: document.getElementById("routeCard"),
   executionCard: document.getElementById("executionCard"),
   schedulerCard: document.getElementById("schedulerCard"),
+  sessionHistoryCard: document.getElementById("sessionHistoryCard"),
   packList: document.getElementById("packList"),
   activityLog: document.getElementById("activityLog"),
   refreshButton: document.getElementById("refreshButton"),
@@ -58,6 +60,8 @@ const elements = {
   sessionAttachForm: document.getElementById("sessionAttachForm"),
   copyResumeCommandButton: document.getElementById("copyResumeCommandButton"),
   openResumeInTerminalButton: document.getElementById("openResumeInTerminalButton"),
+  copyHistoryResumeCommandButton: document.getElementById("copyHistoryResumeCommandButton"),
+  openHistoryResumeInTerminalButton: document.getElementById("openHistoryResumeInTerminalButton"),
   copyContinueLatestCommandButton: document.getElementById("copyContinueLatestCommandButton"),
   openLatestResumeInTerminalButton: document.getElementById("openLatestResumeInTerminalButton"),
   bridgeConfirmForm: document.getElementById("bridgeConfirmForm"),
@@ -322,13 +326,16 @@ async function loadTaskInspector() {
     elements.taskEmpty.classList.remove("hidden");
     elements.taskInspector.classList.add("hidden");
     state.currentExecution = null;
+    state.sessionSuggestions = [];
     return;
   }
-  const [{ task, execution }, { route }] = await Promise.all([
+  const [{ task, execution }, { route }, { sessions }] = await Promise.all([
     api(`/api/tasks/${state.selectedTaskId}`),
     api(`/api/route/${state.selectedTaskId}`),
+    api(`/api/run/sessions/${state.selectedTaskId}?limit=5`),
   ]);
   state.currentExecution = execution;
+  state.sessionSuggestions = sessions || [];
   elements.taskEmpty.classList.add("hidden");
   elements.taskInspector.classList.remove("hidden");
   elements.taskTitle.textContent = task.title;
@@ -344,6 +351,7 @@ async function loadTaskInspector() {
   `;
   renderExecution(task, execution);
   renderScheduler(task);
+  renderSessionHistory();
   if (elements.sessionAttachForm) {
     const executorInput = elements.sessionAttachForm.querySelector('input[name="executor_id"]');
     if (executorInput && execution?.executor_id) {
@@ -394,6 +402,9 @@ function renderExecution(task, execution) {
     <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>
     <div class="muted">会话来源：${execution.executor_session_auto_captured ? `自动提取 (${execution.executor_session_capture_source || "-"})` : (execution.executor_session_attached_at ? "手动挂接" : "-")}</div>
     <div class="muted">恢复命令：${execution.executor_resume_command || execution.executor_resume_last_command || "-"}</div>
+    <div class="muted">最近恢复模式：${execution.executor_resume_last_mode || "-"}</div>
+    <div class="muted">历史恢复来源：${execution.executor_resume_history_session_ref || "-"}</div>
+    <div class="muted">历史恢复任务：${execution.executor_resume_history_task_id || "-"} ${execution.executor_resume_history_task_title || ""}</div>
     <div class="muted">继续最近会话：${execution.executor_continue_command || "-"}</div>
     <div class="muted">终端继续：${execution.executor_terminal_launch_status || "-"}</div>
     <div class="muted">终端应用：${execution.executor_terminal_launch_app || "-"}</div>
@@ -430,6 +441,51 @@ function renderScheduler(task) {
     <div class="muted">未满足依赖：${(item.unmet_dependencies || []).join(", ") || "-"}</div>
     ${warnings}
   `;
+}
+
+function renderSessionHistory() {
+  if (!elements.sessionHistoryCard) return;
+  if (!state.sessionSuggestions.length) {
+    elements.sessionHistoryCard.innerHTML = `
+      <strong>暂无历史会话</strong>
+      <div class="muted">执行器一旦挂接或自动提取过会话，这里会出现可复用候选。</div>
+    `;
+    return;
+  }
+  elements.sessionHistoryCard.innerHTML = state.sessionSuggestions
+    .map((session, index) => `
+      <div class="session-candidate">
+        <div><strong>${session.session_ref}</strong></div>
+        <div class="muted">执行器：${session.executor_id || "-"}</div>
+        <div class="muted">来源任务：${session.task_id || "-"} | ${session.task_title || "-"}</div>
+        <div class="muted">模型：${session.model || "-"} | 分数：${session.match_score || 0}</div>
+        <div class="muted">来源：${session.session_source || "-"} | 时间：${session.attached_at || session.updated_at || "-"}</div>
+        <button type="button" class="button secondary wide attach-session-candidate" data-index="${index}">挂接此历史会话</button>
+      </div>
+    `)
+    .join("");
+  elements.sessionHistoryCard.querySelectorAll(".attach-session-candidate").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const candidate = state.sessionSuggestions[Number(button.dataset.index)];
+      if (!candidate || !state.selectedTaskId) {
+        return;
+      }
+      await runAction(async () => {
+        const data = await api("/api/run/attach", {
+          method: "POST",
+          body: JSON.stringify({
+            task_id: state.selectedTaskId,
+            executor_id: candidate.executor_id,
+            session_id: candidate.session_id || "",
+            session_name: candidate.session_name || "",
+            session_note: `复用历史会话：${candidate.task_id || "-"} ${candidate.task_title || ""}`.trim(),
+          }),
+        });
+        await refreshDashboard();
+        setActivity(`已挂接历史会话。\n执行器：${data.executor.id}\n会话：${data.session_ref}\n恢复命令：${data.execution.executor_resume_command || "-"}`);
+      }, "挂接历史会话失败。");
+    });
+  });
 }
 
 function renderPlanPreview() {
@@ -837,6 +893,22 @@ elements.copyResumeCommandButton.addEventListener("click", async () => {
   }, "复制恢复命令失败。");
 });
 
+elements.copyHistoryResumeCommandButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/run/resume", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, latest: false, history_fallback: true }),
+    });
+    await copyText(data.command);
+    await refreshDashboard();
+    setActivity(`已复制历史候选恢复命令。\n模式：${data.mode}\n执行器：${data.executor.id}\n会话：${data.session_ref || "-"}\n命令：${data.command}`);
+  }, "复制历史候选恢复命令失败。");
+});
+
 elements.copyContinueLatestCommandButton.addEventListener("click", async () => {
   if (!state.selectedTaskId) {
     setActivity("请先选择任务。");
@@ -866,6 +938,21 @@ elements.openResumeInTerminalButton.addEventListener("click", async () => {
     await refreshDashboard();
     setActivity(`已在终端打开恢复命令。\n模式：${data.mode}\n终端：${data.terminal.app}\n命令：${data.command}`);
   }, "在终端打开恢复命令失败。");
+});
+
+elements.openHistoryResumeInTerminalButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/run/resume", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, latest: false, history_fallback: true, open_terminal: true }),
+    });
+    await refreshDashboard();
+    setActivity(`已在终端打开历史候选恢复命令。\n模式：${data.mode}\n终端：${data.terminal.app}\n会话：${data.session_ref || "-"}\n命令：${data.command}`);
+  }, "在终端打开历史候选恢复命令失败。");
 });
 
 elements.openLatestResumeInTerminalButton.addEventListener("click", async () => {

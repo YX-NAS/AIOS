@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 import aios.core.ccswitch as ccswitch_core
 import aios.core.terminal_resume as terminal_resume
 from aios.core.executors import create_executor, load_executor_library
-from aios.core.executions import latest_execution_for_task, load_executions
+from aios.core.executions import build_execution_resume, latest_execution_for_task, load_executions
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.launcher import start_launcher_server
 from aios.core.models import create_model
@@ -885,6 +885,81 @@ def test_run_attach_and_resume_api_returns_session_commands(tmp_path: Path) -> N
         handle.close()
 
 
+def test_run_resume_can_use_historical_session_fallback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    create_executor(
+        None,
+        "history-cli",
+        label="History CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+        resume_args=["resume", "{session_ref}"],
+        continue_args=["resume", "--last"],
+        resume_in_project_root=True,
+        session_ref_label="session_id",
+    )
+    main(["--root", str(tmp_path), "task", "create", "修复登录报错", "--priority", "high"])
+    main(["--root", str(tmp_path), "task", "create", "继续修复登录报错", "--priority", "high"])
+    tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"]
+    first_task = tasks[0]
+    second_task = tasks[1]
+
+    assert main(["--root", str(tmp_path), "run", first_task["id"], "--executor", "history-cli"]) == 0
+    assert main(["--root", str(tmp_path), "run", "attach", first_task["id"], "--executor", "history-cli", "--session-id", "session-old"]) == 0
+    assert main(["--root", str(tmp_path), "run", second_task["id"], "--executor", "history-cli"]) == 0
+
+    resume = build_execution_resume(tmp_path, second_task["id"], history_fallback=True)
+    assert resume["mode"] == "history"
+    assert resume["session_ref"] == "session-old"
+    assert "python3 resume session-old" in resume["command"]
+
+    execution = latest_execution_for_task(tmp_path, second_task["id"])
+    assert execution is not None
+    assert execution["executor_resume_history_session_ref"] == "session-old"
+    assert execution["executor_resume_history_task_id"] == first_task["id"]
+
+
+def test_run_sessions_cli_lists_historical_candidates(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    create_executor(
+        None,
+        "history-cli",
+        label="History CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+        resume_args=["resume", "{session_ref}"],
+        continue_args=["resume", "--last"],
+        resume_in_project_root=True,
+        session_ref_label="session_id",
+    )
+    main(["--root", str(tmp_path), "task", "create", "修复登录报错", "--priority", "high"])
+    main(["--root", str(tmp_path), "task", "create", "继续修复登录报错", "--priority", "high"])
+    tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"]
+    first_task = tasks[0]
+    second_task = tasks[1]
+    main(["--root", str(tmp_path), "run", first_task["id"], "--executor", "history-cli"])
+    main(["--root", str(tmp_path), "run", "attach", first_task["id"], "--executor", "history-cli", "--session-id", "session-old"])
+
+    assert main(["--root", str(tmp_path), "run", "sessions", second_task["id"]]) == 0
+    output = capsys.readouterr().out
+    assert "Historical sessions for" in output
+    assert "session-old" in output
+
+
 def test_ccswitch_export_requires_execution_record(tmp_path: Path) -> None:
     handle = start_web_server(tmp_path, port=0)
     try:
@@ -1611,6 +1686,60 @@ def test_run_dispatch_api_can_auto_confirm_bridge_signal(tmp_path: Path, monkeyp
         assert payload["execution"]["ccswitch_bridge_confirmation_status"] == "confirmed_ready"
         assert payload["execution"]["ccswitch_bridge_confirmation_note"] == "Auto-confirmed from bridge resume signal."
         assert payload["scheduler_after"]["next_action"] == "monitor_running"
+    finally:
+        handle.close()
+
+
+def test_run_sessions_api_returns_historical_candidates(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "history-cli",
+        label="History CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+        resume_args=["resume", "{session_ref}"],
+        continue_args=["resume", "--last"],
+        resume_in_project_root=True,
+        session_ref_label="session_id",
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "继续修复登录报错", "priority": "high"})
+        tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"]
+        first_task = tasks[0]
+        second_task = tasks[1]
+        request_json(handle.url, "/api/run/execute", method="POST", payload={"task_id": first_task["id"], "executor_id": "history-cli"})
+        request_json(
+            handle.url,
+            "/api/run/attach",
+            method="POST",
+            payload={"task_id": first_task["id"], "executor_id": "history-cli", "session_id": "session-old"},
+        )
+        request_json(handle.url, "/api/run/execute", method="POST", payload={"task_id": second_task["id"], "executor_id": "history-cli"})
+
+        status_code, sessions_payload = request_json(handle.url, f"/api/run/sessions/{second_task['id']}?limit=5")
+        assert status_code == 200
+        assert sessions_payload["sessions"][0]["session_ref"] == "session-old"
+        assert sessions_payload["sessions"][0]["executor_id"] == "history-cli"
+
+        status_code, resume_payload = request_json(
+            handle.url,
+            "/api/run/resume",
+            method="POST",
+            payload={"task_id": second_task["id"], "history_fallback": True},
+        )
+        assert status_code == 201
+        assert resume_payload["mode"] == "history"
+        assert resume_payload["session_ref"] == "session-old"
     finally:
         handle.close()
 

@@ -524,14 +524,24 @@ aios --root /path/to/project run attach TASK-20260701-001 --executor codex-cli -
 
 ```bash
 aios --root /path/to/project run resume TASK-20260701-001
+aios --root /path/to/project run resume TASK-20260701-001 --history-fallback
 aios --root /path/to/project run resume TASK-20260701-001 --latest-session
 aios --root /path/to/project run resume TASK-20260701-001 --open-terminal
 aios --root /path/to/project run resume TASK-20260701-001 --latest-session --open-terminal
 ```
 
 第一条优先使用已经挂接的会话引用。  
-第二条强制生成“继续最近会话”的命令。  
-第三、第四条会在 macOS `Terminal.app` 中直接打开恢复命令，减少一次手动复制粘贴。
+第二条会在没有当前挂接会话时，显式尝试使用 AIOS 已知的最佳历史会话。  
+第三条强制生成“继续最近会话”的命令。  
+第四、第五条会在 macOS `Terminal.app` 中直接打开恢复命令，减少一次手动复制粘贴。
+
+如果你想先看 AIOS 认为最相关的历史会话候选，可以用：
+
+```bash
+aios --root /path/to/project run sessions TASK-20260701-001
+```
+
+当前版本里，单项目 Web UI 的任务检查器也会显示“历史会话候选”，并支持一键挂接。
 
 ### 第 7.8 步：一键桥接到 `ccswitch` 和终端
 

@@ -282,6 +282,11 @@ def attach_execution_session(
         "executor_resume_supported": True,
         "executor_resume_command": resume_shell_preview(executor, root, session_ref=session_ref, latest=False),
         "executor_continue_command": resume_shell_preview(executor, root, latest=True) if executor.get("continue_args") else None,
+        "executor_resume_history_session_ref": None,
+        "executor_resume_history_session_kind": None,
+        "executor_resume_history_task_id": None,
+        "executor_resume_history_task_title": None,
+        "executor_resume_history_execution_id": None,
         "updated_at": attached_at,
     }
     updated_execution = update_execution(root, execution["execution_id"], updates)
@@ -297,6 +302,7 @@ def build_execution_resume(
     root: Path,
     task_id: str,
     latest: bool = False,
+    history_fallback: bool = False,
 ) -> dict:
     execution = latest_open_execution_for_task(root, task_id) or latest_execution_for_task(root, task_id)
     if not execution:
@@ -310,9 +316,21 @@ def build_execution_resume(
 
     session_ref = str(execution.get("executor_session_id") or execution.get("executor_session_name") or "").strip() or None
     mode = "latest"
+    history_candidate = None
     if not latest and session_ref:
         mode = "attached"
         command = resume_shell_preview(executor, root, session_ref=session_ref, latest=False)
+    elif not latest and history_fallback:
+        history_candidate = find_best_historical_session(root, task_id, executor_id=executor_id)
+        if history_candidate:
+            mode = "history"
+            session_ref = history_candidate["session_ref"]
+            command = resume_shell_preview(executor, root, session_ref=session_ref, latest=False)
+        elif executor.get("continue_args"):
+            command = resume_shell_preview(executor, root, latest=True)
+        else:
+            label = executor.get("session_ref_label") or "session"
+            raise ValueError(f"No attached {label} is available, and no historical session candidate was found.")
     else:
         if not executor.get("continue_args"):
             label = executor.get("session_ref_label") or "session"
@@ -328,6 +346,11 @@ def build_execution_resume(
             "executor_resume_last_command": command,
             "executor_resume_last_mode": mode,
             "executor_resume_generated_at": generated_at,
+            "executor_resume_history_session_ref": history_candidate.get("session_ref") if history_candidate else None,
+            "executor_resume_history_session_kind": history_candidate.get("session_kind") if history_candidate else None,
+            "executor_resume_history_task_id": history_candidate.get("task_id") if history_candidate else None,
+            "executor_resume_history_task_title": history_candidate.get("task_title") if history_candidate else None,
+            "executor_resume_history_execution_id": history_candidate.get("execution_id") if history_candidate else None,
             "updated_at": generated_at,
         },
     )
@@ -345,9 +368,10 @@ def open_execution_resume_in_terminal(
     root: Path,
     task_id: str,
     latest: bool = False,
+    history_fallback: bool = False,
     terminal_app: str = "Terminal",
 ) -> dict:
-    result = build_execution_resume(root, task_id, latest=latest)
+    result = build_execution_resume(root, task_id, latest=latest, history_fallback=history_fallback)
     launch_result = launch_command_in_terminal(result["command"], app=terminal_app)
     launched_at = now_iso()
     updated_execution = update_execution(
@@ -642,6 +666,99 @@ def execution_summary(root: Path) -> dict:
     }
 
 
+def list_execution_sessions(
+    root: Path,
+    task_id: str | None = None,
+    executor_id: str | None = None,
+    query: str | None = None,
+    limit: int = 5,
+) -> list[dict]:
+    target_task = get_task(root, task_id) if task_id else None
+    target_execution = latest_execution_for_task(root, task_id) if task_id else None
+    resolved_executor_id = str(executor_id or (target_execution or {}).get("executor_id") or "").strip() or None
+    target_title = str((target_task or {}).get("title") or "").strip()
+    target_model = str((target_task or {}).get("recommended_model") or "").strip()
+    query_text = str(query or "").strip().lower()
+
+    sessions_by_key: dict[tuple[str, str, str], dict] = {}
+    for execution in load_executions(root):
+        session_ref = _execution_session_ref(execution)
+        if not session_ref:
+            continue
+        candidate_executor_id = str(execution.get("executor_id") or "").strip()
+        if resolved_executor_id and candidate_executor_id != resolved_executor_id:
+            continue
+        candidate = {
+            "execution_id": execution.get("execution_id"),
+            "task_id": execution.get("task_id"),
+            "task_title": execution.get("task_title"),
+            "execution_status": execution.get("status"),
+            "executor_id": candidate_executor_id or None,
+            "executor_label": execution.get("executor_label"),
+            "session_id": execution.get("executor_session_id"),
+            "session_name": execution.get("executor_session_name"),
+            "session_ref": session_ref,
+            "session_kind": "session_id" if execution.get("executor_session_id") else "session_name",
+            "session_note": execution.get("executor_session_note"),
+            "session_source": "auto" if execution.get("executor_session_auto_captured") else "manual",
+            "session_capture_source": execution.get("executor_session_capture_source"),
+            "session_ref_label": execution.get("executor_session_ref_label"),
+            "model": execution.get("actual_model") or execution.get("planned_model"),
+            "attached_at": execution.get("executor_session_attached_at") or execution.get("updated_at"),
+            "updated_at": execution.get("updated_at"),
+        }
+        haystack = " ".join(
+            str(value or "")
+            for value in (
+                candidate["session_ref"],
+                candidate["session_name"],
+                candidate["task_id"],
+                candidate["task_title"],
+                candidate["model"],
+                candidate["executor_id"],
+            )
+        ).lower()
+        if query_text and query_text not in haystack:
+            continue
+        score = 0
+        if resolved_executor_id and candidate_executor_id == resolved_executor_id:
+            score += 3
+        if task_id and execution.get("task_id") == task_id:
+            score += 6
+        if target_title and str(execution.get("task_title") or "").strip() == target_title:
+            score += 4
+        if target_model and str(execution.get("actual_model") or execution.get("planned_model") or "").strip() == target_model:
+            score += 2
+        candidate["match_score"] = score
+        key = (
+            candidate_executor_id,
+            str(candidate.get("session_id") or ""),
+            str(candidate.get("session_name") or ""),
+        )
+        current = sessions_by_key.get(key)
+        if not current or _session_candidate_sort_key(candidate) > _session_candidate_sort_key(current):
+            sessions_by_key[key] = candidate
+
+    ordered = sorted(sessions_by_key.values(), key=_session_candidate_sort_key, reverse=True)
+    return ordered[: max(1, int(limit or 5))]
+
+
+def find_best_historical_session(
+    root: Path,
+    task_id: str,
+    executor_id: str | None = None,
+    query: str | None = None,
+) -> dict | None:
+    sessions = list_execution_sessions(
+        root,
+        task_id=task_id,
+        executor_id=executor_id,
+        query=query,
+        limit=1,
+    )
+    return sessions[0] if sessions else None
+
+
 def run_verification_command(root: Path, command: str) -> dict:
     completed = subprocess.run(
         command,
@@ -749,6 +866,11 @@ def prepare_execution_record(
         "executor_resume_last_command": None,
         "executor_resume_last_mode": None,
         "executor_resume_generated_at": None,
+        "executor_resume_history_session_ref": None,
+        "executor_resume_history_session_kind": None,
+        "executor_resume_history_task_id": None,
+        "executor_resume_history_task_title": None,
+        "executor_resume_history_execution_id": None,
         "executor_terminal_launch_supported": False,
         "executor_terminal_launch_status": None,
         "executor_terminal_launch_app": None,
@@ -851,6 +973,23 @@ def _auto_attach_executor_session(root: Path, execution_id: str, executor: dict,
         "executor_resume_supported": True,
         "executor_resume_command": resume_shell_preview(executor, root, session_ref=session_ref, latest=False),
         "executor_continue_command": resume_shell_preview(executor, root, latest=True) if executor.get("continue_args") else None,
+        "executor_resume_history_session_ref": None,
+        "executor_resume_history_session_kind": None,
+        "executor_resume_history_task_id": None,
+        "executor_resume_history_task_title": None,
+        "executor_resume_history_execution_id": None,
         "updated_at": attached_at,
     }
     return update_execution(root, execution_id, updates)
+
+
+def _execution_session_ref(execution: dict) -> str | None:
+    return str(execution.get("executor_session_id") or execution.get("executor_session_name") or "").strip() or None
+
+
+def _session_candidate_sort_key(candidate: dict) -> tuple[int, str, str]:
+    return (
+        int(candidate.get("match_score") or 0),
+        str(candidate.get("attached_at") or candidate.get("updated_at") or ""),
+        str(candidate.get("execution_id") or ""),
+    )

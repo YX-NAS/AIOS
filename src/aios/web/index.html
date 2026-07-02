@@ -204,6 +204,10 @@
                   <div class="small-label">调度状态</div>
                   <div id="schedulerCard" class="route-card">还没有调度信息。</div>
                 </div>
+                <div class="inspector-block">
+                  <div class="small-label">历史会话候选</div>
+                  <div id="sessionHistoryCard" class="route-card">还没有历史会话候选。</div>
+                </div>
                 <form id="packForm" class="stack-form slim">
                   <label>
                     <span>生成 Pack 模型</span>
@@ -242,6 +246,8 @@
                 </form>
                 <button id="copyResumeCommandButton" type="button" class="button secondary wide">复制恢复命令</button>
                 <button id="openResumeInTerminalButton" type="button" class="button primary wide">在终端继续当前会话</button>
+                <button id="copyHistoryResumeCommandButton" type="button" class="button subtle wide">复制最佳历史会话恢复命令</button>
+                <button id="openHistoryResumeInTerminalButton" type="button" class="button secondary wide">在终端继续最佳历史会话</button>
                 <button id="copyContinueLatestCommandButton" type="button" class="button subtle wide">复制最近会话继续命令</button>
                 <button id="openLatestResumeInTerminalButton" type="button" class="button secondary wide">在终端继续最近会话</button>
                 <form id="bridgeConfirmForm" class="stack-form slim">

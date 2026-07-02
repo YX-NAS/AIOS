@@ -9,6 +9,7 @@ from aios.core.executions import (
     auto_finish_execution,
     build_execution_resume,
     finish_manual_execution,
+    list_execution_sessions,
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
@@ -19,8 +20,8 @@ from aios.core.executions import (
 
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("run", help="Manage semi-automatic task execution.")
-    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `approve` / `status` / `finish` / `attach` / `resume`.")
-    parser.add_argument("task_id", nargs="?", help="Task ID for status / finish / attach / resume mode.")
+    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `approve` / `status` / `finish` / `attach` / `resume` / `sessions`.")
+    parser.add_argument("task_id", nargs="?", help="Task ID for status / finish / attach / resume / sessions mode.")
     parser.add_argument("--manual", action="store_true", help="Prepare one manual execution.")
     parser.add_argument("--executor", default=None, help="Run one configured executor.")
     parser.add_argument("--model", default=None, help="Execution model. Defaults to the task recommendation.")
@@ -46,8 +47,11 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--session-name", default=None, help="External session name used for attach/resume.")
     parser.add_argument("--session-note", default=None, help="Optional note recorded with one attached session.")
     parser.add_argument("--latest-session", action="store_true", help="Use the executor's continue-latest command for resume.")
+    parser.add_argument("--history-fallback", action="store_true", help="Use the best known historical session when no attached session is available.")
     parser.add_argument("--open-terminal", action="store_true", help="Open the generated resume command in Terminal on macOS.")
     parser.add_argument("--terminal-app", default="Terminal", help="Terminal app used by --open-terminal. Defaults to Terminal.")
+    parser.add_argument("--query", default=None, help="Optional search text used for session suggestions.")
+    parser.add_argument("--limit", type=int, default=5, help="Maximum historical session suggestions to show. Defaults to 5.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
@@ -225,6 +229,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
                 root,
                 args.task_id,
                 latest=bool(args.latest_session),
+                history_fallback=bool(args.history_fallback),
                 terminal_app=args.terminal_app,
             )
             print(f"Resume opened for {result['task']['id']}: {result['task']['title']}")
@@ -235,13 +240,34 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Terminal: {result['terminal']['app']}")
             print(f"Command: {result['command']}")
             return
-        result = build_execution_resume(root, args.task_id, latest=bool(args.latest_session))
+        result = build_execution_resume(root, args.task_id, latest=bool(args.latest_session), history_fallback=bool(args.history_fallback))
         print(f"Resume ready for {result['task']['id']}: {result['task']['title']}")
         print(f"Execution: {result['execution']['execution_id']}")
         print(f"Executor: {result['executor']['id']}")
         print(f"Mode: {result['mode']}")
         print(f"Session ref: {result.get('session_ref') or '-'}")
         print(f"Command: {result['command']}")
+        return
+
+    if args.run_target == "sessions":
+        if not args.task_id:
+            raise ValueError("Task ID is required for `aios run sessions`.")
+        sessions = list_execution_sessions(
+            root,
+            task_id=args.task_id,
+            query=args.query,
+            limit=args.limit,
+        )
+        if not sessions:
+            print(f"No historical sessions for {args.task_id}.")
+            return
+        print(f"Historical sessions for {args.task_id}:")
+        for item in sessions:
+            print(
+                f"- {item['session_ref']} | executor={item.get('executor_id') or '-'} | "
+                f"task={item.get('task_id') or '-'} | score={item.get('match_score', 0)} | "
+                f"source={item.get('session_source') or '-'} | updated={item.get('attached_at') or item.get('updated_at') or '-'}"
+            )
         return
 
     task_id = args.run_target
@@ -298,7 +324,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         return
 
     if not args.manual:
-        raise ValueError("Use `aios run auto [--executor ...]`, `aios run approve TASK-ID --summary ...`, `aios run attach TASK-ID`, `aios run resume TASK-ID`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
+        raise ValueError("Use `aios run auto [--executor ...]`, `aios run approve TASK-ID --summary ...`, `aios run attach TASK-ID`, `aios run resume TASK-ID`, `aios run sessions TASK-ID`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
 
     result = prepare_manual_execution(
         root,

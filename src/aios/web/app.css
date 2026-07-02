@@ -435,6 +435,8 @@ tr.task-row.active td { color: var(--accent); background: rgba(0, 229, 255, 0.05
 
 .route-card { padding: 14px; }
 .route-card strong { color: var(--accent); }
+.session-candidate { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+.session-candidate:first-child { padding-top: 0; border-top: 0; }
 
 .activity-log {
   min-height: 100px; white-space: pre-wrap;

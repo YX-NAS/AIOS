@@ -125,11 +125,14 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert "AIOS Web UI" in html
         assert 'id="taskPagination"' in html
         assert 'id="packPagination"' in html
+        assert 'id="sessionHistoryCard"' in html
+        assert 'id="copyHistoryResumeCommandButton"' in html
 
         with urlopen(f"{handle.url}/assets/app.js") as response:
             js = response.read().decode("utf-8")
         assert "const ITEMS_PER_PAGE = 10;" in js
         assert "renderPagination(elements.taskPagination" in js
         assert "renderPagination(elements.packPagination" in js
+        assert "renderSessionHistory()" in js
     finally:
         handle.close()

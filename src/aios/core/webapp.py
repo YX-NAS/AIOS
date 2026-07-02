@@ -26,6 +26,7 @@ from aios.core.executions import (
     build_execution_resume,
     execution_summary,
     finish_manual_execution,
+    list_execution_sessions,
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
@@ -101,6 +102,25 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 if parsed.path.startswith("/api/run/task/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     return self._send_json({"execution": with_bridge_runtime_signal(self.project_root, latest_execution_for_task(self.project_root, task_id))})
+                if parsed.path.startswith("/api/run/sessions/"):
+                    task_id = parsed.path.rsplit("/", 1)[-1]
+                    qs = parse_qs(parsed.query)
+                    limit_value = qs.get("limit", ["5"])[0]
+                    try:
+                        limit = int(limit_value)
+                    except ValueError as exc:
+                        raise ValueError("limit must be an integer.") from exc
+                    query_value = qs.get("query", [None])[0]
+                    return self._send_json(
+                        {
+                            "sessions": list_execution_sessions(
+                                self.project_root,
+                                task_id=task_id,
+                                query=query_value,
+                                limit=limit,
+                            )
+                        }
+                    )
                 if parsed.path.startswith("/api/route/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     route = route_task(get_task(self.project_root, task_id), self.project_root)
@@ -386,6 +406,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             self.project_root,
                             payload["task_id"],
                             latest=bool(payload.get("latest")),
+                            history_fallback=bool(payload.get("history_fallback")),
                             terminal_app=(payload.get("terminal_app") or "Terminal").strip() or "Terminal",
                         )
                         return self._send_json(
@@ -399,6 +420,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         self.project_root,
                         payload["task_id"],
                         latest=bool(payload.get("latest")),
+                        history_fallback=bool(payload.get("history_fallback")),
                     )
                     return self._send_json(
                         {
