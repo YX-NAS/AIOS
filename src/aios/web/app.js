@@ -587,18 +587,37 @@ elements.startExecutionButton.addEventListener("click", async () => {
 
 elements.dispatchNextButton.addEventListener("click", async () => {
   await runAction(async () => {
+    const completeForm = new FormData(elements.completeForm);
+    const summary = (completeForm.get("summary") || "").trim();
+    const verifyCommand = (completeForm.get("test_command") || "").trim();
+    const actualModel = (completeForm.get("actual_model") || "").trim();
+    const scoreRaw = completeForm.get("score");
+    const scoreNote = (completeForm.get("score_note") || "").trim();
     const data = await api("/api/run/dispatch", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        auto_finish: Boolean(summary),
+        summary: summary || null,
+        actual_model: actualModel || null,
+        verify_command: verifyCommand || null,
+        score: scoreRaw ? Number(scoreRaw) : null,
+        score_note: scoreNote || null,
+      }),
     });
     await refreshDashboard();
-    if (!data.dispatched) {
+    if (!data.progressed) {
       setActivity(`未派发任务：${data.reason}`);
       return;
     }
-    state.selectedTaskId = data.task.id;
+    state.selectedTaskId = data.task?.id || state.selectedTaskId;
     await loadTaskInspector();
-    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}`);
+    if (data.auto_finished && !data.dispatched) {
+      setActivity(`已自动完成 ${data.task.id}。\n状态：${data.execution.status}${data.verification ? `\n验证：${data.verification.summary}` : ""}`);
+      return;
+    }
+    const verificationLine = data.verification ? `\n验证：${data.verification.summary}` : "";
+    const finishLine = data.auto_finished ? "\n任务已自动完成并回写。" : "";
+    setActivity(`已自动派发 ${data.task.id}。\n执行器：${data.executor.id}\n模型：${data.execution.planned_model}\n状态：${data.execution.status}${verificationLine}${finishLine}`);
   }, "自动派发下一任务失败。");
 });
 

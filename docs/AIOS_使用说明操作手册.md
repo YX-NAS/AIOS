@@ -383,8 +383,20 @@ aios --root /path/to/project run TASK-20260701-001 --executor claude-code-cli
 说明：
 
 - 当前这是自动执行原型，不是最终无人值守交付；
-- 自动执行成功后，任务仍需要人工 review；
-- review 通过后，再执行 `aios run finish` 正式完成任务。
+- 默认情况下，自动执行成功后，任务仍需要人工 review；
+- 如果你已经准备好完成总结，并且希望让 AIOS 自动收口，可使用：
+
+```bash
+aios --root /path/to/project run TASK-20260701-001 --executor codex-cli --auto-finish --summary "完成登录修复" --verify-command "pytest -q"
+```
+
+- 如果当前任务已经处于 `review_pending`，也可以直接执行：
+
+```bash
+aios --root /path/to/project run approve TASK-20260701-001 --summary "确认交付" --verify-command "pytest -q"
+```
+
+- 当 `verify-command` 退出码非 0 时，AIOS 不会把任务错误标记为 `done`，而是继续保持 `review_pending`。
 
 ### 第 7.2 步：生成任务交接单
 
@@ -733,7 +745,8 @@ aios --root /path/to/project run finish TASK-20260701-001 --summary "..."
 - 自动调用模型切换器；
 - 自动收集执行结果；
 - 自动判断是否进入下一任务；
-- 自动回写完成摘要和测试结果。
+- 自动回写完成摘要和测试结果；
+- 自动提交 Git 变更。
 
 这一阶段再考虑把 `ccswitch` 接进脚本或适配器层，不建议一开始就直接依赖自动切换。
 

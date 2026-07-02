@@ -11,10 +11,10 @@ from urllib.parse import urlparse
 
 from aios.core.ccswitch import export_ccswitch_payload
 from aios.core.context_builder import build_context_pack
-from aios.core.dispatch import auto_dispatch_next_task
+from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
 from aios.core.executions import execution_summary, finish_manual_execution, latest_execution_for_task, prepare_manual_execution
-from aios.core.executions import run_executor_execution
+from aios.core.executions import run_executor_with_auto_finish
 from aios.core.scoring import load_scores, model_score_summary
 from aios.core.handoff import build_handoff
 from aios.core.models import model_summary
@@ -261,13 +261,19 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         status=HTTPStatus.CREATED,
                     )
                 if parsed.path == "/api/run/execute":
-                    result = run_executor_execution(
+                    result = run_executor_with_auto_finish(
                         self.project_root,
                         payload["task_id"],
                         payload["executor_id"],
                         (payload.get("model") or "").strip() or None,
                         bool(payload.get("refresh_pack")),
                         (payload.get("note") or "").strip() or None,
+                        bool(payload.get("auto_finish")),
+                        (payload.get("summary") or "").strip() or None,
+                        (payload.get("actual_model") or "").strip() or None,
+                        (payload.get("verify_command") or "").strip() or None,
+                        int(payload["score"]) if payload.get("score") is not None else None,
+                        (payload.get("score_note") or "").strip() or None,
                     )
                     return self._send_json(
                         {
@@ -281,16 +287,22 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         status=HTTPStatus.CREATED,
                     )
                 if parsed.path == "/api/run/dispatch":
-                    result = auto_dispatch_next_task(
+                    result = auto_progress_next_step(
                         self.project_root,
                         executor_id=(payload.get("executor_id") or "").strip() or None,
                         model=(payload.get("model") or "").strip() or None,
                         refresh_pack=bool(payload.get("refresh_pack")),
                         note=(payload.get("note") or "").strip() or None,
+                        auto_finish=bool(payload.get("auto_finish")),
+                        summary=(payload.get("summary") or "").strip() or None,
+                        actual_model=(payload.get("actual_model") or "").strip() or None,
+                        verify_command=(payload.get("verify_command") or "").strip() or None,
+                        score=int(payload["score"]) if payload.get("score") is not None else None,
+                        score_note=(payload.get("score_note") or "").strip() or None,
                     )
                     return self._send_json(
                         {
-                            "message": "Task dispatched." if result["dispatched"] else "No dispatchable task.",
+                            "message": "Task progressed." if result["progressed"] else "No dispatchable task.",
                             **result,
                         },
                         status=HTTPStatus.CREATED,

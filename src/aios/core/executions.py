@@ -230,6 +230,53 @@ def run_executor_execution(
     }
 
 
+def run_executor_with_auto_finish(
+    root: Path,
+    task_id: str,
+    executor_id: str,
+    model: str | None = None,
+    refresh_pack: bool = False,
+    note: str | None = None,
+    auto_finish: bool = False,
+    summary: str | None = None,
+    actual_model: str | None = None,
+    verify_command: str | None = None,
+    score: int | None = None,
+    score_note: str | None = None,
+) -> dict:
+    result = run_executor_execution(
+        root,
+        task_id,
+        executor_id,
+        model=model,
+        refresh_pack=refresh_pack,
+        note=note,
+    )
+    result["auto_finished"] = False
+    result["verification"] = None
+    result["reason"] = None
+    if not auto_finish:
+        return result
+    auto_finish_result = auto_finish_execution(
+        root,
+        task_id,
+        summary=summary,
+        actual_model=actual_model,
+        verify_command=verify_command,
+        score=score,
+        score_note=score_note,
+    )
+    result["auto_finished"] = auto_finish_result["finished"]
+    result["verification"] = auto_finish_result.get("verification")
+    result["reason"] = auto_finish_result.get("reason")
+    if auto_finish_result["finished"]:
+        result["task"] = auto_finish_result["task"]
+        result["execution"] = auto_finish_result["execution"]
+    else:
+        result["execution"] = auto_finish_result["execution"]
+    return result
+
+
 def finish_manual_execution(
     root: Path,
     task_id: str,
@@ -282,6 +329,64 @@ def finish_manual_execution(
     }
 
 
+def auto_finish_execution(
+    root: Path,
+    task_id: str,
+    summary: str | None,
+    actual_model: str | None = None,
+    verify_command: str | None = None,
+    score: int | None = None,
+    score_note: str | None = None,
+) -> dict:
+    if not summary:
+        raise ValueError("Use `--summary` when enabling auto finish.")
+    execution = latest_execution_for_task(root, task_id)
+    if not execution:
+        raise ValueError(f"No execution record for {task_id}.")
+    if execution.get("status") != "review_pending":
+        raise ValueError(f"Execution is not ready for auto finish: {task_id}")
+
+    verification = None
+    final_test_result = None
+    if verify_command:
+        verification = run_verification_command(root, verify_command)
+        final_test_result = verification["summary"]
+        update_execution(
+            root,
+            execution["execution_id"],
+            {
+                "test_command": verify_command,
+                "test_result": final_test_result,
+                "updated_at": now_iso(),
+            },
+        )
+        if verification["exit_code"] != 0:
+            return {
+                "finished": False,
+                "reason": f"Verification failed with exit code {verification['exit_code']}.",
+                "task": get_task(root, task_id),
+                "execution": latest_execution_for_task(root, task_id),
+                "verification": verification,
+            }
+
+    result = finish_manual_execution(
+        root,
+        task_id,
+        summary,
+        actual_model=actual_model,
+        test_command=verify_command,
+        test_result=final_test_result,
+        score=score,
+        score_note=score_note,
+    )
+    return {
+        "finished": True,
+        "reason": None,
+        **result,
+        "verification": verification,
+    }
+
+
 def execution_summary(root: Path) -> dict:
     executions = load_executions(root)
     active = [item for item in executions if item.get("status") in ACTIVE_STATUSES]
@@ -291,6 +396,32 @@ def execution_summary(root: Path) -> dict:
         "active_execution_count": len(active),
         "latest_execution_status": latest.get("status") if latest else None,
         "last_execution_updated_at": latest.get("updated_at") if latest else None,
+    }
+
+
+def run_verification_command(root: Path, command: str) -> dict:
+    completed = subprocess.run(
+        command,
+        cwd=root,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        shell=True,
+        check=False,
+    )
+    stdout_excerpt = _truncate_output(completed.stdout or "")
+    stderr_excerpt = _truncate_output(completed.stderr or "")
+    parts = [f"exit code: {completed.returncode}"]
+    if stdout_excerpt:
+        parts.append(f"stdout: {stdout_excerpt}")
+    if stderr_excerpt:
+        parts.append(f"stderr: {stderr_excerpt}")
+    return {
+        "command": command,
+        "exit_code": completed.returncode,
+        "stdout_excerpt": stdout_excerpt,
+        "stderr_excerpt": stderr_excerpt,
+        "summary": " | ".join(parts),
     }
 
 

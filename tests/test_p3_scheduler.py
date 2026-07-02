@@ -66,7 +66,7 @@ def test_scheduler_api_is_visible_in_web_ui(tmp_path: Path) -> None:
     try:
         status = urlopen(f"{handle.url}/assets/app.js").read().decode("utf-8")
         assert "schedulerCard" in status
-        assert "自动派发下一任务" in status
+        assert "自动推进下一步" in urlopen(f"{handle.url}/").read().decode("utf-8")
         assert 'id="metricReady"' in urlopen(f"{handle.url}/").read().decode("utf-8")
     finally:
         handle.close()

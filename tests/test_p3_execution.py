@@ -289,6 +289,50 @@ def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -
     assert execution["status"] == "review_pending"
 
 
+def test_run_executor_cli_can_auto_finish_after_verification(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    create_executor(
+        None,
+        "auto-finish-cli",
+        label="Auto Finish CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+
+    assert main(
+        [
+            "--root",
+            str(tmp_path),
+            "run",
+            task["id"],
+            "--executor",
+            "auto-finish-cli",
+            "--auto-finish",
+            "--summary",
+            "文档更新完成",
+            "--verify-command",
+            "python3 -c \"print('verify ok')\"",
+        ]
+    ) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["status"] == "finished"
+    assert execution["test_command"] == "python3 -c \"print('verify ok')\""
+    assert "exit code: 0" in (execution["test_result"] or "")
+    updated_task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    assert updated_task["status"] == "done"
+
+
 def test_run_execute_api_reports_failed_executor(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_executor(
@@ -360,6 +404,100 @@ def test_run_dispatch_api_returns_noop_when_review_pending_exists(tmp_path: Path
         assert status_code == 201
         assert payload["dispatched"] is False
         assert "待复核" in payload["reason"]
+    finally:
+        handle.close()
+
+
+def test_run_dispatch_api_can_auto_finish_review_pending_task(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "review-auto-cli",
+        label="Review Auto CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "review-auto-cli"},
+        )
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={
+                "auto_finish": True,
+                "summary": "文档更新完成",
+                "verify_command": "python3 -c \"print('verify ok')\"",
+            },
+        )
+        assert status_code == 201
+        assert payload["progressed"] is True
+        assert payload["auto_finished"] is True
+        assert payload["task"]["status"] == "done"
+        assert payload["execution"]["status"] == "finished"
+    finally:
+        handle.close()
+
+
+def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "verify-fail-cli",
+        label="Verify Fail CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "verify-fail-cli"},
+        )
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={
+                "auto_finish": True,
+                "summary": "文档更新完成",
+                "verify_command": "python3 -c \"import sys; sys.exit(3)\"",
+            },
+        )
+        assert status_code == 201
+        assert payload["progressed"] is False
+        assert payload["auto_finished"] is False
+        assert payload["execution"]["status"] == "review_pending"
+        assert "Verification failed" in payload["reason"]
     finally:
         handle.close()
 

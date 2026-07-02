@@ -3,18 +3,20 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from aios.core.dispatch import auto_dispatch_next_task
+from aios.core.dispatch import auto_progress_next_step
 from aios.core.executions import (
+    auto_finish_execution,
     finish_manual_execution,
     latest_execution_for_task,
     prepare_manual_execution,
     run_executor_execution,
+    run_executor_with_auto_finish,
 )
 
 
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("run", help="Manage semi-automatic task execution.")
-    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `status` / `finish`.")
+    parser.add_argument("run_target", nargs="?", help="Task ID for manual mode, or `auto` / `approve` / `status` / `finish`.")
     parser.add_argument("task_id", nargs="?", help="Task ID for status / finish mode.")
     parser.add_argument("--manual", action="store_true", help="Prepare one manual execution.")
     parser.add_argument("--executor", default=None, help="Run one configured executor.")
@@ -28,18 +30,26 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--test-result", default=None, help="Test result summary.")
     parser.add_argument("--score", type=int, default=None, choices=[1, 2, 3, 4, 5], help="Model effectiveness score (1-5).")
     parser.add_argument("--score-note", default=None, help="Optional note about the score.")
+    parser.add_argument("--auto-finish", action="store_true", help="Automatically finish one review_pending execution when possible.")
+    parser.add_argument("--verify-command", default=None, help="Verification command to run before auto finish.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
     if args.run_target == "auto":
-        result = auto_dispatch_next_task(
+        result = auto_progress_next_step(
             root,
             executor_id=args.executor,
             model=args.model,
             refresh_pack=args.refresh_pack,
             note=args.note,
+            auto_finish=args.auto_finish,
+            summary=args.summary,
+            actual_model=args.actual_model,
+            verify_command=args.verify_command,
+            score=args.score,
+            score_note=args.score_note,
         )
-        if not result["dispatched"]:
+        if not result["progressed"]:
             print(f"Auto dispatch skipped: {result['reason']}")
             if result["executor"]:
                 print(f"Default executor: {result['executor']['id']}")
@@ -47,6 +57,12 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             next_action = result["scheduler_before"].get("next_action")
             if next_task or next_action:
                 print(f"Scheduler next: {next_task or '-'} [{next_action or '-'}]")
+            return
+        if result["auto_finished"] and not result["dispatched"]:
+            print(f"Auto finished task: {result['task']['id']} {result['task']['title']}")
+            print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
+            if result.get("verification"):
+                print(f"Verification: {result['verification']['summary']}")
             return
         execution = result["execution"]
         route = result["route"]
@@ -65,10 +81,37 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Command: {execution['executor_command']}")
         if execution.get("executor_log_path"):
             print(f"Log: {execution['executor_log_path']}")
-        if execution["status"] == "review_pending":
+        if result.get("verification"):
+            print(f"Verification: {result['verification']['summary']}")
+        if result["auto_finished"]:
+            print("Next: task has been auto-finished and written back to AIOS.")
+        elif execution["status"] == "review_pending":
             print("Next: review the generated changes and use `aios run finish` to accept the task.")
         elif execution["status"] == "failed":
             print("Next: inspect the execution log, then retry manually or dispatch another ready task later.")
+        return
+
+    if args.run_target == "approve":
+        if not args.task_id:
+            raise ValueError("Task ID is required for `aios run approve`.")
+        result = auto_finish_execution(
+            root,
+            args.task_id,
+            summary=args.summary,
+            actual_model=args.actual_model,
+            verify_command=args.verify_command,
+            score=args.score,
+            score_note=args.score_note,
+        )
+        if not result["finished"]:
+            print(f"Auto finish skipped: {result['reason']}")
+            if result.get("verification"):
+                print(f"Verification: {result['verification']['summary']}")
+            return
+        print(f"Auto finished {result['task']['id']}: {result['task']['title']}")
+        if result.get("verification"):
+            print(f"Verification: {result['verification']['summary']}")
+        print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
         return
 
     if args.run_target == "status":
@@ -106,13 +149,19 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         raise ValueError("Task ID is required.")
 
     if args.executor:
-        result = run_executor_execution(
+        result = run_executor_with_auto_finish(
             root,
             task_id,
             args.executor,
             model=args.model,
             refresh_pack=args.refresh_pack,
             note=args.note,
+            auto_finish=args.auto_finish,
+            summary=args.summary,
+            actual_model=args.actual_model,
+            verify_command=args.verify_command,
+            score=args.score,
+            score_note=args.score_note,
         )
         execution = result["execution"]
         route = result["route"]
@@ -129,14 +178,18 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Command: {execution['executor_command']}")
         if execution.get("executor_log_path"):
             print(f"Log: {execution['executor_log_path']}")
-        if execution["status"] == "review_pending":
+        if result.get("verification"):
+            print(f"Verification: {result['verification']['summary']}")
+        if result["auto_finished"]:
+            print("Next: task has been auto-finished and written back to AIOS.")
+        elif execution["status"] == "review_pending":
             print("Next: review the generated changes and use `aios run finish` to accept the task.")
         elif execution["status"] == "failed":
             print("Next: inspect the execution log, then retry or fall back to `aios run --manual`.")
         return
 
     if not args.manual:
-        raise ValueError("Use `aios run auto [--executor ...]`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
+        raise ValueError("Use `aios run auto [--executor ...]`, `aios run approve TASK-ID --summary ...`, `aios run --manual TASK-ID`, `aios run TASK-ID --executor EXECUTOR`, or `aios run status|finish ...`.")
 
     result = prepare_manual_execution(
         root,
