@@ -18,6 +18,7 @@ Context Engine 补强方案见 [docs/P3_5_DESIGN.md](/Users/yaxun/SynologyDrive/
 Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_13_DESIGN.md)。
 自动 PR 草案方案见 [docs/P3_14_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_14_DESIGN.md)。
 执行会话恢复入口方案见 [docs/P3_16_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_16_DESIGN.md)。
+执行会话自动识别方案见 [docs/P3_17_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_17_DESIGN.md)。
 
 ## MVP 边界
 
@@ -57,6 +58,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 - `aios ccswitch provider TASK-ID` 可直接生成 `resource=provider` Deep Link，把模型对应的 provider 配置导入 CC Switch
 - `aios ccswitch session TASK-ID` 可导出包含 provider/prompt deeplink 和恢复提示的 Session Handoff
 - `aios run attach TASK-ID` / `aios run resume TASK-ID` 可把真实执行会话挂接到任务上，并生成恢复命令
+- 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
 ## 安装与运行

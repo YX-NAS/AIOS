@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shlex
 from pathlib import Path
 
@@ -28,6 +29,7 @@ def default_executor_library() -> list[dict]:
                 "continue_args": [],
                 "resume_in_project_root": True,
                 "session_ref_label": "session",
+                "session_capture_patterns": [],
             },
             {
                 "id": "codex-cli",
@@ -44,6 +46,13 @@ def default_executor_library() -> list[dict]:
                 "continue_args": ["resume", "--last"],
                 "resume_in_project_root": True,
                 "session_ref_label": "session_id",
+                "session_capture_patterns": [
+                    {"pattern": r"session[_\\s-]?id[:=]\\s*(?P<session_id>[0-9a-fA-F-]{8,})", "source": "combined"},
+                    {
+                        "pattern": r"(?P<session_id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+                        "source": "combined",
+                    },
+                ],
             },
             {
                 "id": "claude-code-cli",
@@ -60,6 +69,10 @@ def default_executor_library() -> list[dict]:
                 "continue_args": ["--continue"],
                 "resume_in_project_root": True,
                 "session_ref_label": "session_id_or_name",
+                "session_capture_patterns": [
+                    {"pattern": r"session[_\\s-]?id[:=]\\s*(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "combined"},
+                    {"pattern": r"--resume\\s+(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "combined"},
+                ],
             },
         ]
     )
@@ -131,6 +144,7 @@ def create_executor(
     continue_args: list[str] | None = None,
     resume_in_project_root: bool = True,
     session_ref_label: str | None = None,
+    session_capture_patterns: list[dict] | None = None,
 ) -> dict:
     executors = load_executor_library(root)
     cleaned_id = _clean_executor_id(executor_id)
@@ -151,6 +165,7 @@ def create_executor(
         "continue_args": [str(arg) for arg in (continue_args or [])],
         "resume_in_project_root": bool(resume_in_project_root),
         "session_ref_label": _clean_session_ref_label(session_ref_label),
+        "session_capture_patterns": _clean_session_capture_patterns(session_capture_patterns or []),
     }
     executors.append(executor)
     save_executor_library(root, executors)
@@ -174,6 +189,7 @@ def update_executor(
     continue_args: list[str] | None = None,
     resume_in_project_root: bool = True,
     session_ref_label: str | None = None,
+    session_capture_patterns: list[dict] | None = None,
 ) -> dict:
     executors = load_executor_library(root)
     cleaned_id = _clean_executor_id(executor_id)
@@ -196,6 +212,7 @@ def update_executor(
         executor["continue_args"] = [str(arg) for arg in (continue_args or [])]
         executor["resume_in_project_root"] = bool(resume_in_project_root)
         executor["session_ref_label"] = _clean_session_ref_label(session_ref_label)
+        executor["session_capture_patterns"] = _clean_session_capture_patterns(session_capture_patterns or [])
         save_executor_library(root, executors)
         return get_executor(root, cleaned_id)
     raise ValueError(f"Executor not found: {current_executor_id}")
@@ -234,6 +251,39 @@ def build_executor_command(executor: dict, prompt: str, model: str | None) -> li
 
 def executor_supports_session_resume(executor: dict) -> bool:
     return bool(executor.get("resume_args") or executor.get("continue_args"))
+
+
+def extract_executor_session_ref(executor: dict, stdout: str, stderr: str) -> dict | None:
+    patterns = _clean_session_capture_patterns(executor.get("session_capture_patterns") or [])
+    if not patterns:
+        return None
+    outputs = {
+        "stdout": stdout or "",
+        "stderr": stderr or "",
+        "combined": "\n".join(part for part in [stdout or "", stderr or ""] if part),
+    }
+    for item in patterns:
+        haystack = outputs.get(item["source"], outputs["combined"])
+        if not haystack:
+            continue
+        match = re.search(item["pattern"], haystack, flags=re.IGNORECASE | re.MULTILINE)
+        if not match:
+            continue
+        session_id = _clean_optional_capture(match.groupdict().get("session_id"))
+        session_name = _clean_optional_capture(match.groupdict().get("session_name"))
+        session_ref = session_id or session_name
+        if not session_ref:
+            session_ref = _clean_optional_capture(match.group(1) if match.groups() else None)
+        if not session_ref:
+            continue
+        return {
+            "session_id": session_id or session_ref,
+            "session_name": session_name,
+            "session_ref": session_ref,
+            "pattern": item["pattern"],
+            "source": item["source"],
+        }
+    return None
 
 
 def build_executor_resume_command(
@@ -321,6 +371,7 @@ def normalize_executors(executors: list[dict]) -> list[dict]:
                 "continue_args": [str(arg) for arg in executor.get("continue_args", [])],
                 "resume_in_project_root": bool(executor.get("resume_in_project_root", True)),
                 "session_ref_label": _clean_session_ref_label(executor.get("session_ref_label")),
+                "session_capture_patterns": _clean_session_capture_patterns(executor.get("session_capture_patterns") or []),
             }
         )
     _ensure_unique_ids(normalized)
@@ -339,3 +390,23 @@ def _ensure_unique_ids(executors: list[dict]) -> None:
 def _clean_session_ref_label(value: object) -> str:
     cleaned = str(value or "").strip()
     return cleaned or "session"
+
+
+def _clean_session_capture_patterns(patterns: list[dict]) -> list[dict]:
+    cleaned: list[dict] = []
+    for item in patterns:
+        if not isinstance(item, dict):
+            continue
+        pattern = str(item.get("pattern") or "").strip()
+        if not pattern:
+            continue
+        source = str(item.get("source") or "combined").strip().lower()
+        if source not in {"stdout", "stderr", "combined"}:
+            source = "combined"
+        cleaned.append({"pattern": pattern, "source": source})
+    return cleaned
+
+
+def _clean_optional_capture(value: object) -> str | None:
+    cleaned = str(value or "").strip()
+    return cleaned or None

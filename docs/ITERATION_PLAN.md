@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-16` 的执行会话恢复入口，核心功能包括：
+当前版本已交付到 `P3-17` 的执行会话自动识别，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -24,6 +24,7 @@
 - `P3-12` 自动 Push 已落地首版特性分支远端交付能力
 - `P3-14` 自动 PR 草案已落地首版 Draft PR 创建能力
 - `P3-16` 执行会话恢复入口已落地首版 attach / resume / continue-latest 能力
+- `P3-17` 执行会话自动识别已落地首版 stdout/stderr regex 提取能力
 
 已知短板：
 
@@ -94,6 +95,7 @@
 | P3-14 | 自动 PR 草案 | `run ... --auto-pr` 支持在 push 成功后生成 Draft PR |
 | P3-15 | PR 元数据增强 | reviewer / label / 交付模板增强 |
 | P3-16 | 执行会话恢复入口 | 执行器支持任务级 session attach / resume / continue-latest |
+| P3-17 | 执行会话自动识别 | 执行器运行后自动从输出提取 session 引用并生成恢复命令 |
 
 ### P4 — 平台化
 
@@ -111,7 +113,7 @@
 1. P3-9：补齐成本与执行统计
 2. P3-13：补 provider / session handoff 数据层
 3. P3-16：补执行器会话恢复入口
-4. P3-15：设计 PR 元数据增强边界
+4. P3-17：补执行会话自动识别
 5. P0-2：持续同步操作手册与规划文档
 
 ## 下一阶段实施目标
@@ -143,5 +145,6 @@
 | 2026-07-02 | `ccswitch` 先接官方 Deep Link 的 prompt 导入，不直接假设稳定 CLI | 先用已公开且可验证的入口缩短人工切换路径，再逐步扩大自动化范围 |
 | 2026-07-02 | Provider / Session 先做全局模型库元数据、provider deeplink 和 session handoff，不直接做桌面静默恢复 | 当前缺的是稳定交接数据，不是更多脆弱自动点击 |
 | 2026-07-02 | 执行器会话恢复先做 attach / resume / continue-latest，不直接做 session 自动探测 | 先把恢复入口和审计链固定住，再逐步尝试自动恢复 |
+| 2026-07-02 | 执行器会话自动识别先做 regex 提取，不直接承诺所有执行器都能稳定给出 session id | 先落地最小可用自动识别，再逐步提升准确率 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |

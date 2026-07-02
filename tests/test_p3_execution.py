@@ -534,6 +534,40 @@ def test_run_executor_cli_executes_command_and_marks_review_pending(tmp_path: Pa
     assert execution["executor_exit_code"] == 0
     assert execution["executor_log_path"]
     assert (tmp_path / execution["executor_log_path"]).exists()
+
+
+def test_run_executor_cli_auto_extracts_session_reference(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    create_executor(
+        None,
+        "capture-cli",
+        label="Capture CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('session_id: 123e4567-e89b-12d3-a456-426614174000')"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+        resume_args=["resume", "{session_ref}"],
+        continue_args=["resume", "--last"],
+        resume_in_project_root=True,
+        session_ref_label="session_id",
+        session_capture_patterns=[{"pattern": r"session_id:\s*(?P<session_id>[0-9a-fA-F-]{36})", "source": "stdout"}],
+    )
+
+    assert main(["--root", str(tmp_path), "run", task["id"], "--executor", "capture-cli"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["executor_session_id"] == "123e4567-e89b-12d3-a456-426614174000"
+    assert execution["executor_session_auto_captured"] is True
+    assert execution["executor_session_capture_source"] == "stdout"
+    assert "python3 resume 123e4567-e89b-12d3-a456-426614174000" in execution["executor_resume_command"]
     updated_task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
     assert updated_task["status"] == "running"
 
@@ -706,6 +740,46 @@ def test_run_execute_api_reports_failed_executor(tmp_path: Path, monkeypatch) ->
         assert status_code == 201
         assert payload["execution"]["status"] == "failed"
         assert payload["execution"]["executor_exit_code"] == 2
+    finally:
+        handle.close()
+
+
+def test_run_execute_api_auto_extracts_session_reference(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_executor(
+        None,
+        "capture-api-cli",
+        label="Capture API CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('session_id: auto-session-001')"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+        resume_args=["resume", "{session_ref}"],
+        continue_args=["resume", "--last"],
+        resume_in_project_root=True,
+        session_ref_label="session_id",
+        session_capture_patterns=[{"pattern": r"session_id:\s*(?P<session_id>[A-Za-z0-9._:-]{6,})", "source": "stdout"}],
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "capture-api-cli"},
+        )
+        assert status_code == 201
+        assert payload["execution"]["executor_session_id"] == "auto-session-001"
+        assert payload["execution"]["executor_session_auto_captured"] is True
+        assert "python3 resume auto-session-001" in payload["execution"]["executor_resume_command"]
     finally:
         handle.close()
 

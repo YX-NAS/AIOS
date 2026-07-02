@@ -66,6 +66,7 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
             continue_args=args.continue_arg or [],
             resume_in_project_root=not args.no_resume_project_root,
             session_ref_label=args.session_ref_label,
+            session_capture_patterns=_parse_session_capture_patterns(args.session_capture_pattern or []),
         )
         print(f"Created executor: {executor['id']}")
         return
@@ -89,6 +90,7 @@ def run_executor(root: Path, args: argparse.Namespace) -> None:
             continue_args=args.continue_arg or [],
             resume_in_project_root=not args.no_resume_project_root,
             session_ref_label=args.session_ref_label,
+            session_capture_patterns=_parse_session_capture_patterns(args.session_capture_pattern or []),
         )
         print(f"Updated executor: {executor['id']}")
         return
@@ -122,6 +124,7 @@ def _add_mutation_arguments(parser: argparse.ArgumentParser, create_mode: bool) 
     parser.add_argument("--continue-arg", action="append", default=[], help="Repeatable continue-latest command argument template.")
     parser.add_argument("--no-resume-project-root", action="store_true", help="Do not wrap resume commands with project root cd.")
     parser.add_argument("--session-ref-label", default=None, help="Human label for attached session reference.")
+    parser.add_argument("--session-capture-pattern", action="append", default=[], help="Repeatable session capture rule: source:regex or regex.")
 
 
 def _parse_env_pairs(pairs: list[str]) -> dict[str, str]:
@@ -132,3 +135,19 @@ def _parse_env_pairs(pairs: list[str]) -> dict[str, str]:
         key, value = pair.split("=", 1)
         env[key.strip()] = value
     return env
+
+
+def _parse_session_capture_patterns(items: list[str]) -> list[dict]:
+    patterns: list[dict] = []
+    for raw in items:
+        text = str(raw or "").strip()
+        if not text:
+            continue
+        if ":" in text:
+            source, pattern = text.split(":", 1)
+            source = source.strip().lower()
+            if source in {"stdout", "stderr", "combined"} and pattern.strip():
+                patterns.append({"source": source, "pattern": pattern.strip()})
+                continue
+        patterns.append({"source": "combined", "pattern": text})
+    return patterns

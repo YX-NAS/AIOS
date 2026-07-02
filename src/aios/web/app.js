@@ -375,6 +375,7 @@ function renderExecution(task, execution) {
     <div class="muted">ccswitch Deep Link：${execution.ccswitch_deeplink ? "已生成" : "-"}</div>
     <div class="muted">Session Handoff：${execution.ccswitch_session_handoff_path || "-"}</div>
     <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>
+    <div class="muted">会话来源：${execution.executor_session_auto_captured ? `自动提取 (${execution.executor_session_capture_source || "-"})` : (execution.executor_session_attached_at ? "手动挂接" : "-")}</div>
     <div class="muted">恢复命令：${execution.executor_resume_command || execution.executor_resume_last_command || "-"}</div>
     <div class="muted">继续最近会话：${execution.executor_continue_command || "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>

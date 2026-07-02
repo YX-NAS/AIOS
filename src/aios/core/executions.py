@@ -8,6 +8,7 @@ from pathlib import Path
 from aios.core.executors import (
     build_executor_command,
     executor_supports_session_resume,
+    extract_executor_session_ref,
     get_executor,
     resume_shell_preview,
     shell_preview,
@@ -191,6 +192,7 @@ def run_executor_execution(
                 "executor_stderr_excerpt": _truncate_output(completed.stderr),
             },
         )
+        _auto_attach_executor_session(root, execution["execution_id"], executor, completed.stdout, completed.stderr)
     except FileNotFoundError as exc:
         update_execution(
             root,
@@ -272,6 +274,9 @@ def attach_execution_session(
         "executor_session_name": resolved_session_name,
         "executor_session_note": str(session_note or "").strip() or None,
         "executor_session_attached_at": attached_at,
+        "executor_session_auto_captured": False,
+        "executor_session_capture_source": "manual",
+        "executor_session_capture_pattern": None,
         "executor_session_ref_label": executor.get("session_ref_label") or "session",
         "executor_resume_supported": True,
         "executor_resume_command": resume_shell_preview(executor, root, session_ref=session_ref, latest=False),
@@ -707,6 +712,9 @@ def prepare_execution_record(
         "executor_session_name": None,
         "executor_session_note": None,
         "executor_session_attached_at": None,
+        "executor_session_auto_captured": False,
+        "executor_session_capture_source": None,
+        "executor_session_capture_pattern": None,
         "executor_session_ref_label": executor.get("session_ref_label") if executor else None,
         "executor_resume_command": None,
         "executor_continue_command": resume_shell_preview(executor, root, latest=True) if executor and executor.get("continue_args") else None,
@@ -788,3 +796,27 @@ def _truncate_output(text: str, limit: int = 800) -> str | None:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _auto_attach_executor_session(root: Path, execution_id: str, executor: dict, stdout: str, stderr: str) -> dict | None:
+    if not executor_supports_session_resume(executor):
+        return None
+    captured = extract_executor_session_ref(executor, stdout, stderr)
+    if not captured:
+        return None
+    session_ref = captured["session_ref"]
+    attached_at = now_iso()
+    updates = {
+        "executor_session_id": captured["session_id"],
+        "executor_session_name": captured["session_name"],
+        "executor_session_attached_at": attached_at,
+        "executor_session_auto_captured": True,
+        "executor_session_capture_source": captured["source"],
+        "executor_session_capture_pattern": captured["pattern"],
+        "executor_session_ref_label": executor.get("session_ref_label") or "session",
+        "executor_resume_supported": True,
+        "executor_resume_command": resume_shell_preview(executor, root, session_ref=session_ref, latest=False),
+        "executor_continue_command": resume_shell_preview(executor, root, latest=True) if executor.get("continue_args") else None,
+        "updated_at": attached_at,
+    }
+    return update_execution(root, execution_id, updates)

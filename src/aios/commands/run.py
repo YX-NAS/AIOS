@@ -311,6 +311,7 @@ def _print_execution(execution: dict) -> None:
     print(f"Exit code: {execution.get('executor_exit_code') if execution.get('executor_exit_code') is not None else '-'}")
     print(f"Log: {execution.get('executor_log_path') or '-'}")
     print(f"Session ref: {execution.get('executor_session_id') or execution.get('executor_session_name') or '-'}")
+    print(f"Session captured: {'auto' if execution.get('executor_session_auto_captured') else ('manual' if execution.get('executor_session_attached_at') else '-')}")
     print(f"Resume command: {execution.get('executor_resume_command') or '-'}")
     print(f"Continue latest: {execution.get('executor_continue_command') or '-'}")
     print(f"Test command: {execution.get('test_command') or '-'}")
