@@ -51,6 +51,7 @@ const elements = {
   copyCcswitchDeeplinkButton: document.getElementById("copyCcswitchDeeplinkButton"),
   copyCcswitchProviderDeeplinkButton: document.getElementById("copyCcswitchProviderDeeplinkButton"),
   copyCcswitchSessionHandoffButton: document.getElementById("copyCcswitchSessionHandoffButton"),
+  runCcswitchBridgeButton: document.getElementById("runCcswitchBridgeButton"),
   copyCcswitchButton: document.getElementById("copyCcswitchButton"),
   copyCurrentPackButton: document.getElementById("copyCurrentPackButton"),
   copyHandoffButton: document.getElementById("copyHandoffButton"),
@@ -376,6 +377,8 @@ function renderExecution(task, execution) {
     <div class="muted">ccswitch 导出：${execution.ccswitch_export_path || "-"}</div>
     <div class="muted">ccswitch Deep Link：${execution.ccswitch_deeplink ? "已生成" : "-"}</div>
     <div class="muted">Session Handoff：${execution.ccswitch_session_handoff_path || "-"}</div>
+    <div class="muted">Bridge：${execution.ccswitch_bridge_path || "-"}</div>
+    <div class="muted">Bridge 模式：${execution.ccswitch_bridge_mode || "-"}</div>
     <div class="muted">挂接会话：${execution.executor_session_id || execution.executor_session_name || "-"}</div>
     <div class="muted">会话来源：${execution.executor_session_auto_captured ? `自动提取 (${execution.executor_session_capture_source || "-"})` : (execution.executor_session_attached_at ? "手动挂接" : "-")}</div>
     <div class="muted">恢复命令：${execution.executor_resume_command || execution.executor_resume_last_command || "-"}</div>
@@ -730,6 +733,21 @@ elements.copyCcswitchSessionHandoffButton.addEventListener("click", async () => 
     await refreshDashboard();
     setActivity(`已复制 Session Handoff。\n文件：${data.handoff_path}\n模型：${data.handoff.model}`);
   }, "复制 Session Handoff 失败。");
+});
+
+elements.runCcswitchBridgeButton.addEventListener("click", async () => {
+  if (!state.selectedTaskId) {
+    setActivity("请先选择任务。");
+    return;
+  }
+  await runAction(async () => {
+    const data = await api("/api/ccswitch/bridge", {
+      method: "POST",
+      body: JSON.stringify({ task_id: state.selectedTaskId, app: "codex", open: true }),
+    });
+    await refreshDashboard();
+    setActivity(`已启动桥接执行。\n文件：${data.bridge_path}\n模式：${data.bridge.bridge_mode}\n模型：${data.bridge.model}`);
+  }, "启动 ccswitch 桥接执行失败。");
 });
 
 elements.sessionAttachForm.addEventListener("submit", async (event) => {

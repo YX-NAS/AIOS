@@ -20,6 +20,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 执行会话恢复入口方案见 [docs/P3_16_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_16_DESIGN.md)。
 执行会话自动识别方案见 [docs/P3_17_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_17_DESIGN.md)。
 终端继续执行方案见 [docs/P3_18_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_18_DESIGN.md)。
+`ccswitch` 桥接层方案见 [docs/P3_19_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_19_DESIGN.md)。
 
 ## MVP 边界
 
@@ -60,6 +61,7 @@ Provider / Session 接管方案见 [docs/P3_13_DESIGN.md](/Users/yaxun/SynologyD
 - `aios ccswitch session TASK-ID` 可导出包含 provider/prompt deeplink 和恢复提示的 Session Handoff
 - `aios run attach TASK-ID` / `aios run resume TASK-ID` 可把真实执行会话挂接到任务上，并生成恢复命令
 - `aios run resume TASK-ID --open-terminal` 可直接在 macOS Terminal 打开恢复命令
+- `aios ccswitch bridge TASK-ID --open` 可在 macOS 上把 provider 导入、prompt 导入和终端恢复串成一条桥接动作
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 
@@ -114,6 +116,7 @@ aios run resume TASK-20260630-001
 aios run resume TASK-20260630-001 --latest-session
 aios run resume TASK-20260630-001 --open-terminal
 aios run resume TASK-20260630-001 --latest-session --open-terminal
+aios ccswitch bridge TASK-20260630-001 --open
 aios ccswitch export TASK-20260630-001
 aios ccswitch deeplink TASK-20260630-001 --app codex --stdout
 aios ccswitch provider TASK-20260630-001 --app codex --stdout
@@ -173,6 +176,7 @@ http://127.0.0.1:8765
 - 生成并复制 ccswitch Deep Link
 - 生成并复制 Provider Deep Link
 - 导出并复制 Session Handoff
+- 一键桥接到 CC Switch 与终端
 - 挂接任务执行会话并复制恢复命令
 - 在 macOS Terminal 中直接继续当前会话或最近会话
 - 生成 Context Pack

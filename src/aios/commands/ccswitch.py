@@ -5,6 +5,7 @@ from pathlib import Path
 
 from aios.core.ccswitch import (
     build_ccswitch_deeplink,
+    build_ccswitch_bridge,
     build_ccswitch_provider_deeplink,
     export_ccswitch_payload,
     export_ccswitch_session_handoff,
@@ -40,6 +41,16 @@ def add_ccswitch_parser(subparsers: argparse._SubParsersAction) -> None:
     session.add_argument("--app", default="codex", help="Target app for the handoff package. Defaults to codex.")
     session.add_argument("--model", default=None, help="Optional model override used in the handoff package.")
     session.add_argument("--stdout", action="store_true", help="Also print the handoff JSON payload to stdout.")
+
+    bridge = ccswitch_subparsers.add_parser("bridge", help="Build one ccswitch bridge bundle for provider/prompt/resume.")
+    bridge.add_argument("task_id")
+    bridge.add_argument("--app", default="codex", help="Target app for the bridge package. Defaults to codex.")
+    bridge.add_argument("--model", default=None, help="Optional model override used in the bridge package.")
+    bridge.add_argument("--latest-session", action="store_true", help="Use continue-latest instead of the attached session reference.")
+    bridge.add_argument("--open", action="store_true", help="Open the full bridge sequence locally.")
+    bridge.add_argument("--stdout", action="store_true", help="Also print the bridge JSON payload to stdout.")
+    bridge.add_argument("--terminal-app", default="Terminal", help="Terminal app used for the final resume step.")
+    bridge.add_argument("--delay-ms", type=int, default=1200, help="Delay between provider/prompt imports and terminal resume.")
 
 
 def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
@@ -89,6 +100,28 @@ def run_ccswitch(root: Path, args: argparse.Namespace) -> None:
         print(f"Model: {result['handoff']['model']}")
         if args.stdout:
             print(export_payload_as_text(result["handoff"]).rstrip())
+        return
+
+    if args.ccswitch_command == "bridge":
+        result = build_ccswitch_bridge(
+            root,
+            args.task_id,
+            app=args.app,
+            model=args.model,
+            latest=bool(args.latest_session),
+            open_bundle=bool(args.open),
+            terminal_app=args.terminal_app,
+            delay_ms=args.delay_ms,
+        )
+        print(f"Exported {result['bridge_path']}")
+        print(f"Task: {result['task']['id']} {result['task']['title']}")
+        print(f"App: {result['bridge']['app']}")
+        print(f"Model: {result['bridge']['model']}")
+        print(f"Mode: {result['bridge']['bridge_mode']}")
+        if result["opened"]:
+            print(f"Opened at: {result['opened_at']}")
+        if args.stdout:
+            print(export_payload_as_text(result["bridge"]).rstrip())
         return
 
     raise ValueError("Unsupported ccswitch command.")

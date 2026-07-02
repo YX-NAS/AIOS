@@ -96,6 +96,7 @@ aios status
 aios ccswitch export TASK-ID
 aios ccswitch provider TASK-ID
 aios ccswitch session TASK-ID
+aios ccswitch bridge TASK-ID
 aios task create "任务名称"
 aios task plan "目标描述"
 aios task plan "复杂目标描述" --draft
@@ -530,6 +531,28 @@ aios --root /path/to/project run resume TASK-20260701-001 --latest-session --ope
 第一条优先使用已经挂接的会话引用。  
 第二条强制生成“继续最近会话”的命令。  
 第三、第四条会在 macOS `Terminal.app` 中直接打开恢复命令，减少一次手动复制粘贴。
+
+### 第 7.8 步：一键桥接到 `ccswitch` 和终端
+
+如果你希望把 provider 导入、prompt 导入、终端恢复三步收成一次动作，可以用：
+
+```bash
+aios --root /path/to/project ccswitch bridge TASK-20260701-001 --open
+```
+
+它会按顺序执行：
+
+1. 打开 Provider Deep Link
+2. 打开 Prompt Deep Link
+3. 在 macOS `Terminal.app` 中打开恢复命令
+
+同时还会在：
+
+```text
+.aios/ccswitch/TASK-ID-EXECUTION-ID-模型名-bridge.json
+```
+
+里留下桥接包，方便后续排查和自动化扩展。
 
 ### 第 8 步：手动切换 `ccswitch` 并执行开发
 

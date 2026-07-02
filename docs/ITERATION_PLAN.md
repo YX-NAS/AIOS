@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-18` 的终端继续执行，核心功能包括：
+当前版本已交付到 `P3-19` 的 `ccswitch -> 终端恢复` 桥接层，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -26,6 +26,7 @@
 - `P3-16` 执行会话恢复入口已落地首版 attach / resume / continue-latest 能力
 - `P3-17` 执行会话自动识别已落地首版 stdout/stderr regex 提取能力
 - `P3-18` 终端继续执行已落地首版 macOS Terminal 一键继续能力
+- `P3-19` `ccswitch` 桥接层已落地首版 provider/prompt/resume 顺序桥接能力
 
 已知短板：
 
@@ -35,7 +36,7 @@
 - Context Pack 还缺分层与质量校验
 - 自动化还没有接管 `ccswitch` 和真实会话切换
 - 还不会自动识别或提取真实 session id
-- 已经能直接在终端继续恢复命令，但还没有把 `ccswitch -> 会话恢复 -> 执行器继续` 串成无人值守闭环
+- 已经能把 `ccswitch -> 会话恢复 -> 终端继续` 串起来，但还不能确认 `ccswitch` 导入结果，也不能自动选择历史会话
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
 - 只支持本地自动 commit，还没有自动 push / PR
 - 当前只接通 `ccswitch` prompt Deep Link，provider / session 级接管仍处于数据层补齐阶段
@@ -99,6 +100,7 @@
 | P3-16 | 执行会话恢复入口 | 执行器支持任务级 session attach / resume / continue-latest |
 | P3-17 | 执行会话自动识别 | 执行器运行后自动从输出提取 session 引用并生成恢复命令 |
 | P3-18 | 终端继续执行 | `run resume --open-terminal` / Web 按钮可直接在 macOS Terminal 打开恢复命令 |
+| P3-19 | `ccswitch` 桥接层 | `ccswitch bridge` 把 provider/prompt/resume 串成一条受控桥接链路 |
 
 ### P4 — 平台化
 
@@ -113,10 +115,10 @@
 
 ## 近期重点（接下来 2 周）
 
-1. P3-18：补终端继续执行，缩短 session 恢复链路
+1. P3-20：补 `ccswitch` 导入确认 / 恢复确认的可观测层
 2. P3-9：补齐成本与执行统计
-3. P3-13：补 provider / session handoff 数据层
-4. P3-19：评估 `ccswitch -> 执行器恢复` 的自动接管桥接层
+3. P3-21：评估历史会话选择与搜索自动化
+4. P3-22：评估执行器真实 CLI 接管面
 5. P0-2：持续同步操作手册与规划文档
 
 ## 下一阶段实施目标
@@ -150,5 +152,6 @@
 | 2026-07-02 | 执行器会话恢复先做 attach / resume / continue-latest，不直接做 session 自动探测 | 先把恢复入口和审计链固定住，再逐步尝试自动恢复 |
 | 2026-07-02 | 执行器会话自动识别先做 regex 提取，不直接承诺所有执行器都能稳定给出 session id | 先落地最小可用自动识别，再逐步提升准确率 |
 | 2026-07-02 | 终端继续执行先只支持 macOS Terminal.app | 先补最稳定、最小依赖的一跳，把“复制命令再粘贴”收口，再扩终端和桌面接管 |
+| 2026-07-02 | `ccswitch` 桥接层先做 provider/prompt/resume 顺序编排，不做 UI 状态确认 | 先把离散动作收成一条可追踪链路，再评估更脆弱的桌面观察与控制 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |

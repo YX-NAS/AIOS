@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from aios.core.ccswitch import (
+    build_ccswitch_bridge,
     build_ccswitch_deeplink,
     build_ccswitch_provider_deeplink,
     export_ccswitch_payload,
@@ -122,6 +123,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     self._send_error(HTTPStatus.NOT_FOUND, "Not found")
                     return
                 if parsed.path == "/api/ccswitch/session-handoff":
+                    self._send_error(HTTPStatus.NOT_FOUND, "Not found")
+                    return
+                if parsed.path == "/api/ccswitch/bridge":
                     self._send_error(HTTPStatus.NOT_FOUND, "Not found")
                     return
                 if parsed.path.startswith("/api/packs/by-task/"):
@@ -300,6 +304,24 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(
                         {
                             "message": "ccswitch session handoff exported.",
+                            **result,
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/ccswitch/bridge":
+                    result = build_ccswitch_bridge(
+                        self.project_root,
+                        payload["task_id"],
+                        app=(payload.get("app") or "codex").strip() or "codex",
+                        model=(payload.get("model") or "").strip() or None,
+                        latest=bool(payload.get("latest")),
+                        open_bundle=bool(payload.get("open")),
+                        terminal_app=(payload.get("terminal_app") or "Terminal").strip() or "Terminal",
+                        delay_ms=int(payload.get("delay_ms") or 1200),
+                    )
+                    return self._send_json(
+                        {
+                            "message": "ccswitch bridge exported.",
                             **result,
                         },
                         status=HTTPStatus.CREATED,

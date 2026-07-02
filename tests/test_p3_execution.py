@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import aios.core.ccswitch as ccswitch_core
 import aios.core.terminal_resume as terminal_resume
 from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import latest_execution_for_task, load_executions
@@ -474,6 +475,52 @@ def test_ccswitch_session_handoff_cli_exports_json_bundle(tmp_path: Path, monkey
     assert task["id"] in payload["session_search_keywords"]
 
 
+def test_ccswitch_bridge_cli_exports_and_opens_sequence(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    opened_links: list[str] = []
+    launched_commands: list[tuple[str, str]] = []
+    delays: list[float] = []
+
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", lambda deeplink: opened_links.append(deeplink))
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": launched_commands.append((command, app)) or {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: delays.append(seconds))
+
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    main(["--root", str(tmp_path), "run", "--manual", task["id"], "--model", "gpt-5.5-coder", "--start"])
+    main(["--root", str(tmp_path), "run", "attach", task["id"], "--executor", "codex-cli", "--session-id", "session-123"])
+
+    assert main(["--root", str(tmp_path), "ccswitch", "bridge", task["id"], "--open"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    bridge_path = tmp_path / execution["ccswitch_bridge_path"]
+    assert bridge_path.exists()
+    payload = json.loads(bridge_path.read_text(encoding="utf-8"))
+    assert payload["bridge_mode"] == "attached"
+    assert payload["provider_deeplink"].startswith("ccswitch://v1/import?")
+    assert payload["prompt_deeplink"].startswith("ccswitch://v1/import?")
+    assert "codex resume session-123" in payload["resume_command"]
+    assert len(opened_links) == 2
+    assert len(launched_commands) == 1
+    assert launched_commands[0][1] == "Terminal"
+    assert delays == [1.2, 1.2]
+
+
 def test_ccswitch_provider_and_session_api_return_auditable_payloads(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_model(
@@ -521,6 +568,62 @@ def test_ccswitch_provider_and_session_api_return_auditable_payloads(tmp_path: P
         assert session_payload["handoff"]["provider_config"]["endpoint"] == "https://api.openai.com/v1"
         assert (tmp_path / session_payload["handoff_path"]).exists()
         assert session_payload["execution"]["ccswitch_session_app"] == "codex"
+    finally:
+        handle.close()
+
+
+def test_ccswitch_bridge_api_returns_bundle_and_audits_execution(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    create_model(
+        None,
+        "gpt-5.5-coder",
+        "GPT 5.5 Coder",
+        "openai",
+        True,
+        1,
+        ["complex_coding"],
+        "https://api.openai.com/v1",
+        None,
+        "需要本地路由",
+        None,
+    )
+    opened_links: list[str] = []
+    launched_commands: list[tuple[str, str]] = []
+    monkeypatch.setattr(ccswitch_core, "open_ccswitch_deeplink", lambda deeplink: opened_links.append(deeplink))
+    monkeypatch.setattr(ccswitch_core, "launch_command_in_terminal", lambda command, app="Terminal": launched_commands.append((command, app)) or {"opened": True, "app": app, "command": command})
+    monkeypatch.setattr(ccswitch_core.time, "sleep", lambda seconds: None)
+
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "修复登录报错", "priority": "high"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+        request_json(
+            handle.url,
+            "/api/run/manual",
+            method="POST",
+            payload={"task_id": task["id"], "model": "gpt-5.5-coder", "start": True},
+        )
+        request_json(
+            handle.url,
+            "/api/run/attach",
+            method="POST",
+            payload={"task_id": task["id"], "executor_id": "codex-cli", "session_id": "session-789"},
+        )
+
+        status_code, bridge_payload = request_json(
+            handle.url,
+            "/api/ccswitch/bridge",
+            method="POST",
+            payload={"task_id": task["id"], "app": "codex", "open": True},
+        )
+        assert status_code == 201
+        assert bridge_payload["bridge"]["bridge_mode"] == "attached"
+        assert bridge_payload["opened"] is True
+        assert bridge_payload["execution"]["ccswitch_bridge_app"] == "codex"
+        assert (tmp_path / bridge_payload["bridge_path"]).exists()
+        assert len(opened_links) == 2
+        assert launched_commands[0][1] == "Terminal"
     finally:
         handle.close()
 
