@@ -59,6 +59,9 @@ def default_model_library() -> list[dict]:
                 "notes": None,
                 "config_url": None,
                 "auth_env_vars": default_auth_env_vars(infer_provider(model)),
+                "input_cost_per_1m": None,
+                "output_cost_per_1m": None,
+                "cost_currency": "USD",
             }
         )
     return models
@@ -123,6 +126,9 @@ def normalize_models(models: list[dict]) -> list[dict]:
                 "notes": _clean_optional_text(model.get("notes")),
                 "config_url": _clean_optional_text(model.get("config_url")),
                 "auth_env_vars": _clean_auth_env_vars(model.get("auth_env_vars"), str(model.get("provider") or infer_provider(model_id)).strip().lower()),
+                "input_cost_per_1m": _clean_optional_number(model.get("input_cost_per_1m")),
+                "output_cost_per_1m": _clean_optional_number(model.get("output_cost_per_1m")),
+                "cost_currency": str(model.get("cost_currency") or "USD").strip().upper(),
             }
         )
     _ensure_unique_ids(normalized)
@@ -143,6 +149,9 @@ def create_model(
     notes: str | None = None,
     config_url: str | None = None,
     auth_env_vars: list[str] | None = None,
+    input_cost_per_1m: float | None = None,
+    output_cost_per_1m: float | None = None,
+    cost_currency: str | None = None,
 ) -> dict:
     models = load_model_library(root)
     model_id = _clean_model_id(model_id)
@@ -161,6 +170,9 @@ def create_model(
         "notes": _clean_optional_text(notes),
         "config_url": _clean_optional_text(config_url),
         "auth_env_vars": _clean_auth_env_vars(auth_env_vars, (provider or infer_provider(model_id)).strip().lower()),
+        "input_cost_per_1m": _clean_optional_number(input_cost_per_1m),
+        "output_cost_per_1m": _clean_optional_number(output_cost_per_1m),
+        "cost_currency": str(cost_currency or "USD").strip().upper(),
     }
     models.append(model)
     save_model_library(root, models)
@@ -181,6 +193,9 @@ def update_model(
     notes: str | None = None,
     config_url: str | None = None,
     auth_env_vars: list[str] | None = None,
+    input_cost_per_1m: float | None = None,
+    output_cost_per_1m: float | None = None,
+    cost_currency: str | None = None,
 ) -> dict:
     models = load_model_library(root)
     target_id = _clean_model_id(model_id)
@@ -200,6 +215,9 @@ def update_model(
             model["notes"] = _clean_optional_text(notes)
             model["config_url"] = _clean_optional_text(config_url)
             model["auth_env_vars"] = _clean_auth_env_vars(auth_env_vars, model["provider"])
+            model["input_cost_per_1m"] = _clean_optional_number(input_cost_per_1m)
+            model["output_cost_per_1m"] = _clean_optional_number(output_cost_per_1m)
+            model["cost_currency"] = str(cost_currency or "USD").strip().upper()
             save_model_library(root, models)
             return next(item for item in load_model_library(root) if item["id"] == target_id)
     raise ValueError(f"Model not found: {current_model_id}")
@@ -222,6 +240,7 @@ def model_summary(root: Path | None = None) -> dict:
         "task_types": TASK_TYPES,
         "enabled_model_count": len([model for model in models if model["enabled"]]),
         "provider_ready_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["ready"]]),
+        "priced_model_count": len([model for model in models if model.get("input_cost_per_1m") is not None or model.get("output_cost_per_1m") is not None]),
     }
 
 
@@ -233,6 +252,37 @@ def get_model(root: Path | None, model_id: str) -> dict | None:
         if model["id"] == target:
             return model
     return None
+
+
+def estimate_model_cost(
+    root: Path | None,
+    model_id: str,
+    prompt_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> dict:
+    model = get_model(root, model_id)
+    input_rate = _clean_optional_number((model or {}).get("input_cost_per_1m"))
+    output_rate = _clean_optional_number((model or {}).get("output_cost_per_1m"))
+    currency = str((model or {}).get("cost_currency") or "USD").strip().upper()
+    prompt = max(0, int(prompt_tokens or 0))
+    output = max(0, int(output_tokens or 0))
+    input_cost = round(prompt / 1_000_000 * input_rate, 6) if input_rate is not None else None
+    output_cost = round(output / 1_000_000 * output_rate, 6) if output_rate is not None else None
+    total_cost = None
+    if input_cost is not None or output_cost is not None:
+        total_cost = round((input_cost or 0.0) + (output_cost or 0.0), 6)
+    return {
+        "model_id": model_id,
+        "prompt_tokens": prompt,
+        "output_tokens": output,
+        "total_tokens": prompt + output,
+        "input_cost_per_1m": input_rate,
+        "output_cost_per_1m": output_rate,
+        "estimated_input_cost": input_cost,
+        "estimated_output_cost": output_cost,
+        "estimated_total_cost": total_cost,
+        "cost_currency": currency,
+    }
 
 
 def default_auth_env_vars(provider: str) -> list[str]:
@@ -286,6 +336,15 @@ def _clean_task_types(task_types: list[str]) -> list[str]:
 def _clean_optional_text(value: object) -> str | None:
     cleaned = str(value or "").strip()
     return cleaned or None
+
+
+def _clean_optional_number(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    cleaned = float(value)
+    if cleaned < 0:
+        raise ValueError("Numeric model fields cannot be negative.")
+    return round(cleaned, 6)
 
 
 def _clean_auth_env_vars(values: object, provider: str) -> list[str]:

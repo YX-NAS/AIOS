@@ -104,6 +104,10 @@ function renderProjects() {
               <div class="metric-label">活跃执行</div>
             </div>
             <div class="metric-tile">
+              <div class="metric-value">${formatCost(project.total_estimated_cost, project.cost_currency)}</div>
+              <div class="metric-label">累计估算成本</div>
+            </div>
+            <div class="metric-tile">
               <div class="metric-value">${project.ready_count || 0}</div>
               <div class="metric-label">可执行</div>
             </div>
@@ -118,6 +122,7 @@ function renderProjects() {
             <div><strong>技术栈：</strong>${formatList(project.languages)} / ${formatList(project.frameworks)}</div>
             <div class="small-note">最近端口：${project.port || project.last_port || "-"} | 最近任务更新时间：${project.last_task_updated_at || "-"}</div>
             <div class="small-note">最近执行状态：${project.latest_execution_status || "-"} | 最近执行更新时间：${project.last_execution_updated_at || "-"}</div>
+            <div class="small-note">累计 Token：${project.total_token_estimate || 0} | 平均执行时长：${formatDuration(project.average_duration_seconds)} | 最近执行时长：${formatDuration(project.latest_execution_duration_seconds)}</div>
             <div class="small-note">待复核：${project.review_pending_count || 0} | 执行失败：${project.failed_count || 0} | 下一步：${project.scheduler_next_action || "-"}</div>
             <div class="small-note">下一条任务：${project.scheduler_next_task_title || "-"}</div>
           </div>
@@ -213,6 +218,9 @@ function renderModels() {
           <td><input name="endpoint" value="${model.endpoint || ""}" placeholder="https://api.example.com/v1" /></td>
           <td><input name="configUrl" value="${model.config_url || ""}" placeholder="https://..." /></td>
           <td><input name="authEnvVars" value="${(model.auth_env_vars || []).join(", ")}" placeholder="OPENAI_API_KEY" /></td>
+          <td><input name="inputCostPer1m" value="${model.input_cost_per_1m ?? ""}" type="number" min="0" step="0.000001" placeholder="0.00" /></td>
+          <td><input name="outputCostPer1m" value="${model.output_cost_per_1m ?? ""}" type="number" min="0" step="0.000001" placeholder="0.00" /></td>
+          <td><input name="costCurrency" value="${model.cost_currency || "USD"}" placeholder="USD" /></td>
           <td><input name="notes" value="${model.notes || ""}" placeholder="路由或登录说明" /></td>
           <td class="td-task-types"><div class="task-type-checkboxes" data-task-types="${model.task_types.join(",")}"></div></td>
           <td><input name="rank" type="number" min="1" value="${model.rank}" class="rank-input" /></td>
@@ -251,6 +259,9 @@ function renderModels() {
           endpoint: String(row.querySelector('input[name="endpoint"]').value || "").trim(),
           config_url: String(row.querySelector('input[name="configUrl"]').value || "").trim(),
           auth_env_vars: parseCommaList(row.querySelector('input[name="authEnvVars"]').value || ""),
+          input_cost_per_1m: row.querySelector('input[name="inputCostPer1m"]').value || null,
+          output_cost_per_1m: row.querySelector('input[name="outputCostPer1m"]').value || null,
+          cost_currency: String(row.querySelector('input[name="costCurrency"]').value || "").trim() || "USD",
           notes: String(row.querySelector('input[name="notes"]').value || "").trim(),
           enabled: enabledCheckbox.checked,
           rank: Number(row.querySelector('input[name="rank"]').value || 1),
@@ -323,6 +334,18 @@ function formatList(items) {
   return items && items.length ? items.join(", ") : "未识别";
 }
 
+function formatCost(amount, currency) {
+  const numeric = Number(amount || 0);
+  return `${numeric.toFixed(numeric >= 1 ? 2 : 4)} ${currency || "USD"}`;
+}
+
+function formatDuration(seconds) {
+  if (seconds == null || seconds === "") {
+    return "-";
+  }
+  return `${Number(seconds).toFixed(2)}s`;
+}
+
 function getSelectedTaskTypes(selectEl) {
   const selected = [];
   for (const option of selectEl.selectedOptions) {
@@ -384,6 +407,9 @@ elements.modelCreateForm.addEventListener("submit", async (event) => {
       endpoint: String(form.get("endpoint") || "").trim(),
       config_url: String(form.get("config_url") || "").trim(),
       auth_env_vars: parseCommaList(form.get("auth_env_vars") || ""),
+      input_cost_per_1m: form.get("input_cost_per_1m") || null,
+      output_cost_per_1m: form.get("output_cost_per_1m") || null,
+      cost_currency: String(form.get("cost_currency") || "").trim() || "USD",
       notes: String(form.get("notes") || "").trim(),
       enabled: form.get("enabled") === "on",
       rank: Number(form.get("rank") || 1),

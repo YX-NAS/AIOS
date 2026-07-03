@@ -21,7 +21,8 @@ def run_model(root, args: argparse.Namespace) -> None:
             runtime = model.get("runtime") or {}
             readiness = "ready" if runtime.get("ready") else "not-ready"
             status = "enabled" if model.get("enabled") else "disabled"
-            print(f"{model['id']} [{model['provider']}] {status} {readiness} rank={model['rank']} label={model['label']}")
+            pricing = f" cost_in={model.get('input_cost_per_1m') or '-'} cost_out={model.get('output_cost_per_1m') or '-'} {model.get('cost_currency') or 'USD'}"
+            print(f"{model['id']} [{model['provider']}] {status} {readiness} rank={model['rank']} label={model['label']}{pricing}")
         return
 
     if args.model_command == "doctor":
@@ -41,6 +42,9 @@ def run_model(root, args: argparse.Namespace) -> None:
             print(f"  auth_env_vars: {', '.join(runtime.get('auth_env_vars') or []) or '-'}")
             print(f"  present_env_vars: {', '.join(runtime.get('present_auth_env_vars') or []) or '-'}")
             print(f"  missing_env_vars: {', '.join(runtime.get('missing_auth_env_vars') or []) or '-'}")
+            print(f"  input_cost_per_1m: {model.get('input_cost_per_1m') if model.get('input_cost_per_1m') is not None else '-'}")
+            print(f"  output_cost_per_1m: {model.get('output_cost_per_1m') if model.get('output_cost_per_1m') is not None else '-'}")
+            print(f"  cost_currency: {model.get('cost_currency') or 'USD'}")
             print(f"  provider_config: {runtime.get('provider_config_status') or '-'}")
             print(f"  reason: {runtime.get('reason') or '-'}")
         return

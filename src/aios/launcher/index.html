@@ -67,6 +67,9 @@
           <input name="endpoint" placeholder="Provider 地址，例如 https://api.openai.com/v1" />
           <input name="config_url" placeholder="可选配置 URL" />
           <input name="auth_env_vars" placeholder="鉴权环境变量，逗号分隔" />
+          <input name="input_cost_per_1m" type="number" min="0" step="0.000001" placeholder="输入成本 / 1M token" />
+          <input name="output_cost_per_1m" type="number" min="0" step="0.000001" placeholder="输出成本 / 1M token" />
+          <input name="cost_currency" placeholder="成本币种，默认 USD" />
           <select id="createTaskTypes" name="taskTypes" multiple size="3"></select>
           <input name="rank" type="number" min="1" value="1" />
           <input name="notes" placeholder="补充说明，例如需本地路由" />
@@ -86,6 +89,9 @@
                 <th>Provider 地址</th>
                 <th>配置 URL</th>
                 <th>鉴权变量</th>
+                <th>输入成本 / 1M</th>
+                <th>输出成本 / 1M</th>
+                <th>币种</th>
                 <th>说明</th>
                 <th>任务类型</th>
                 <th>优先级</th>

@@ -12,7 +12,7 @@ from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import build_execution_resume, latest_execution_for_task, load_executions
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.launcher import start_launcher_server
-from aios.core.models import create_model
+from aios.core.models import create_model, update_model
 from aios.core.tasks import update_task_fields
 from aios.core.webapp import start_web_server
 from aios.main import main
@@ -1035,6 +1035,56 @@ def test_run_executor_cli_executes_command_and_marks_review_pending(tmp_path: Pa
     assert (tmp_path / execution["executor_log_path"]).exists()
 
 
+def test_run_executor_cli_records_token_cost_and_duration(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    update_model(
+        None,
+        "gpt-5.5",
+        "gpt-5.5",
+        "gpt-5.5",
+        "openai",
+        True,
+        1,
+        ["documentation", "simple_coding"],
+        "https://api.openai.com/v1",
+        None,
+        None,
+        None,
+        ["OPENAI_API_KEY"],
+        2.0,
+        8.0,
+        "USD",
+    )
+    create_executor(
+        None,
+        "cost-cli",
+        label="Cost CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('ok output for token estimate')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+
+    assert main(["--root", str(tmp_path), "run", task["id"], "--executor", "cost-cli"]) == 0
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["prompt_token_estimate"] > 0
+    assert execution["output_token_estimate"] > 0
+    assert execution["total_token_estimate"] == execution["prompt_token_estimate"] + execution["output_token_estimate"]
+    assert execution["estimated_input_cost"] is not None
+    assert execution["estimated_total_cost"] is not None
+    assert execution["cost_currency"] == "USD"
+    assert execution["duration_seconds"] is not None
+
+
 def test_run_executor_cli_auto_extracts_session_reference(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     main(["--root", str(tmp_path), "init", "--name", "demo"])
@@ -1976,6 +2026,7 @@ def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, caps
     output = capsys.readouterr().out
     assert "Providers:" in output
     assert "ready /" in output
+    assert "Usage:" in output
 
 
 def test_plan_draft_api_create_confirm_and_delete(tmp_path: Path) -> None:

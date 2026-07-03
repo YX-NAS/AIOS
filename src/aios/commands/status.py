@@ -31,6 +31,18 @@ def run_status(root: Path, args: argparse.Namespace) -> None:
         f"latest={execution['latest_execution_status'] or '-'}"
     )
     print(
+        "Usage: "
+        f"prompt={execution['total_prompt_token_estimate']} tok, "
+        f"output={execution['total_output_token_estimate']} tok, "
+        f"cost~{execution['total_estimated_cost']} {execution['cost_currency']}"
+    )
+    if execution.get("average_duration_seconds") is not None:
+        print(
+            "Timing: "
+            f"avg={execution['average_duration_seconds']}s, "
+            f"latest={execution['latest_execution_duration_seconds'] or '-'}s"
+        )
+    print(
         "Providers: "
         f"{models['provider_ready_count']} ready / "
         f"{models['enabled_model_count']} enabled models"

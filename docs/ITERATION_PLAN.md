@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前版本已交付到 `P3-28` 的验证失败后自动二次派发，核心功能包括：
+当前版本已交付到 `P3-29` 的 provider / 鉴权就绪探测，并补齐 `P3-9` 的成本与执行统计，核心功能包括：
 
 - CLI：init / scan / task / route / pack / run / ccswitch / handoff / complete / status / web / launcher
 - 单项目 Web UI：项目状态、任务台、路由、执行状态、Context Pack、ccswitch 导出、完成回写
@@ -36,6 +36,7 @@
 - `P3-27` 执行器真实 CLI 可用性探测已落地首版 doctor、healthcheck 和自动派发安全门
 - `P3-28` 验证失败后的自动二次派发已落地首版一次受控 fallback retry
 - `P3-29` provider / 鉴权就绪探测已落地首版模型运行时状态、`aios model doctor` 和 launcher 实时展示
+- `P3-9` 成本与执行统计已落地首版模型定价元数据、token 估算、执行耗时与 launcher / Web / CLI 汇总展示
 
 已知短板：
 
@@ -50,6 +51,7 @@
 - 现在自动派发也会先判断命令型执行器是否真实可用，而不是只看配置存在
 - 现在验证失败后还能按任务 fallback 模型自动再派发一次，而不是立刻把链路卡死
 - 现在还能先判断模型 provider 配置和本机鉴权变量是否就绪，而不是只看路由推荐结果
+- 现在还能按模型库单价估算执行成本，并在多项目首页和项目控制台里持续汇总 token、耗时与成本
 - 现在还能在检测到本地恢复 signal 后受控自动确认 bridge，但默认仍不开启
 - 自动收口仍依赖显式 `summary`，还不会自动生成可审计的交付结论
 - provider readiness 目前仍停留在本机配置与环境变量层，不等于真实远端 API 一定可用
@@ -140,10 +142,10 @@
 
 ## 近期重点（接下来 2 周）
 
-1. P3-9：补齐成本与执行统计
-2. P3-29 后续：从静态 env readiness 升级到 provider API handshake / session truth source
-3. P3-25：评估 `ccswitch` 内部状态读取或外部确认替代方案
-4. P3-30：细化失败分类与多轮重试策略
+1. P3-29 后续：从静态 env readiness 升级到 provider API handshake / session truth source
+2. P3-25：评估 `ccswitch` 内部状态读取或外部确认替代方案
+3. P3-30：细化失败分类与多轮重试策略
+4. P3-31：把成本统计接入预算阈值与调度策略
 5. P0-2：持续同步操作手册与规划文档
 
 ## 下一阶段实施目标
@@ -190,3 +192,4 @@
 | 2026-07-02 | provider readiness 先做 endpoint/config + auth env 检查，不直接声称远端登录态真实可用 | 先把本机配置真相补齐，再评估更重的 API 握手或桌面 session 观测 |
 | 2026-07-02 | 自动 Push 默认跳过 main/master，只处理特性分支 | 先降低远程破坏面，再逐步扩到受保护分支和 PR 流程 |
 | 2026-07-02 | 自动 PR 只创建 Draft PR，不直接生成 Ready PR | 先让远程交付进入可审查状态，不越过人工审核门槛 |
+| 2026-07-03 | 成本统计先采用模型库手工定价 + 文本 token 估算，不直接接 provider 真实账单 | 先补最小可用可观测性，再逐步增加 API 握手、预算与真实账单对齐 |

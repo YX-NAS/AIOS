@@ -186,6 +186,9 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
                 "endpoint": "https://api.openai.com/v1",
                 "config_url": "https://example.com/openai-config.json",
                 "auth_env_vars": ["OPENAI_API_KEY"],
+                "input_cost_per_1m": 2.5,
+                "output_cost_per_1m": 10.0,
+                "cost_currency": "USD",
                 "notes": "需要本地路由",
                 "enabled": True,
                 "rank": 2,
@@ -196,6 +199,7 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         assert created_model_payload["model"]["id"] == "gpt-5.5-coder"
         assert created_model_payload["model"]["endpoint"] == "https://api.openai.com/v1"
         assert created_model_payload["model"]["auth_env_vars"] == ["OPENAI_API_KEY"]
+        assert created_model_payload["model"]["input_cost_per_1m"] == 2.5
 
         status_code, updated_model_payload = request_json(
             handle.url,
@@ -209,6 +213,9 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
                 "endpoint": "https://api.anthropic.com",
                 "config_url": "https://example.com/claude.json",
                 "auth_env_vars": ["ANTHROPIC_API_KEY", "CLAUDE_CODE_TOKEN"],
+                "input_cost_per_1m": 3.0,
+                "output_cost_per_1m": 15.0,
+                "cost_currency": "USD",
                 "notes": "需要登录态",
                 "enabled": True,
                 "rank": 1,
@@ -226,6 +233,8 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         assert claude["endpoint"] == "https://api.anthropic.com"
         assert claude["notes"] == "需要登录态"
         assert claude["auth_env_vars"] == ["ANTHROPIC_API_KEY", "CLAUDE_CODE_TOKEN"]
+        assert claude["input_cost_per_1m"] == 3.0
+        assert claude["output_cost_per_1m"] == 15.0
 
         status_code, deleted_model_payload = request_json(
             handle.url,

@@ -3,8 +3,11 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
+from datetime import datetime
 from pathlib import Path
 
+from aios.core.context_builder import estimate_tokens
 from aios.core.executors import (
     build_executor_command,
     executor_supports_session_resume,
@@ -18,6 +21,7 @@ from aios.core.git_commit import auto_commit_task_changes, git_snapshot
 from aios.core.git_pr import auto_create_pr_draft
 from aios.core.git_push import auto_push_commit
 from aios.core.handoff import build_handoff
+from aios.core.models import estimate_model_cost
 from aios.core.paths import require_aios
 from aios.core.router import route_task
 from aios.core.scoring import save_score
@@ -160,7 +164,7 @@ def run_executor_execution(
     )
     timeout_seconds = executor.get("timeout_seconds") or None
     log_path = execution_log_path(root, execution["execution_id"])
-    timestamp = now_iso()
+    started_monotonic = time.monotonic()
 
     try:
         completed = subprocess.run(
@@ -173,6 +177,9 @@ def run_executor_execution(
             check=False,
         )
         status = "review_pending" if completed.returncode == 0 else "failed"
+        finished_at = now_iso()
+        output_tokens = estimate_tokens("\n".join(part for part in [completed.stdout or "", completed.stderr or ""] if part))
+        cost = estimate_model_cost(root, selected_model, execution.get("prompt_token_estimate"), output_tokens)
         _write_execution_log(
             log_path,
             preview,
@@ -185,32 +192,42 @@ def run_executor_execution(
             execution["execution_id"],
             {
                 "status": status,
-                "finished_at": timestamp,
-                "updated_at": timestamp,
+                "finished_at": finished_at,
+                "updated_at": finished_at,
                 "executor_command": preview,
                 "executor_exit_code": completed.returncode,
                 "executor_log_path": str(log_path.relative_to(root)),
                 "executor_stdout_excerpt": _truncate_output(completed.stdout),
                 "executor_stderr_excerpt": _truncate_output(completed.stderr),
+                "output_token_estimate": output_tokens,
+                "total_token_estimate": cost["total_tokens"],
+                "estimated_output_cost": cost["estimated_output_cost"],
+                "estimated_total_cost": cost["estimated_total_cost"],
+                "cost_currency": cost["cost_currency"],
+                "duration_seconds": round(time.monotonic() - started_monotonic, 3),
             },
         )
         _auto_attach_executor_session(root, execution["execution_id"], executor, completed.stdout, completed.stderr)
     except FileNotFoundError as exc:
+        finished_at = now_iso()
         update_execution(
             root,
             execution["execution_id"],
             {
                 "status": "failed",
-                "finished_at": timestamp,
-                "updated_at": timestamp,
+                "finished_at": finished_at,
+                "updated_at": finished_at,
                 "executor_command": preview,
                 "executor_exit_code": None,
                 "executor_log_path": str(log_path.relative_to(root)),
                 "executor_stderr_excerpt": str(exc),
+                "duration_seconds": round(time.monotonic() - started_monotonic, 3),
             },
         )
         raise ValueError(f"Executor binary not found: {executor.get('binary')}") from exc
     except subprocess.TimeoutExpired as exc:
+        finished_at = now_iso()
+        output_tokens = estimate_tokens("\n".join(part for part in [exc.stdout or "", exc.stderr or ""] if part))
         _write_execution_log(
             log_path,
             preview,
@@ -223,13 +240,16 @@ def run_executor_execution(
             execution["execution_id"],
             {
                 "status": "failed",
-                "finished_at": timestamp,
-                "updated_at": timestamp,
+                "finished_at": finished_at,
+                "updated_at": finished_at,
                 "executor_command": preview,
                 "executor_exit_code": None,
                 "executor_log_path": str(log_path.relative_to(root)),
                 "executor_stdout_excerpt": _truncate_output(exc.stdout or ""),
                 "executor_stderr_excerpt": _truncate_output(exc.stderr or f"Execution timed out after {timeout_seconds} seconds."),
+                "output_token_estimate": output_tokens,
+                "total_token_estimate": int(execution.get("prompt_token_estimate") or 0) + output_tokens,
+                "duration_seconds": round(time.monotonic() - started_monotonic, 3),
             },
         )
         raise ValueError(f"Executor timed out after {timeout_seconds} seconds.") from exc
@@ -558,6 +578,7 @@ def finish_manual_execution(
             item["finished_at"] = timestamp
             item["updated_at"] = timestamp
             item["status"] = "finished"
+            item["duration_seconds"] = execution_duration_seconds({**item, "finished_at": timestamp}) or item.get("duration_seconds")
             execution = item
             resolved_model = item["actual_model"] or item.get("planned_model") or resolved_model
             break
@@ -796,11 +817,22 @@ def execution_summary(root: Path) -> dict:
     executions = load_executions(root)
     active = [item for item in executions if item.get("status") in ACTIVE_STATUSES]
     latest = max(executions, key=lambda item: item.get("updated_at") or "", default=None)
+    finished_with_duration = [item for item in executions if execution_duration_seconds(item) is not None]
+    total_prompt_tokens = sum(int(item.get("prompt_token_estimate") or 0) for item in executions)
+    total_output_tokens = sum(int(item.get("output_token_estimate") or 0) for item in executions)
+    total_cost = round(sum(float(item.get("estimated_total_cost") or 0.0) for item in executions), 6)
     return {
         "execution_count": len(executions),
         "active_execution_count": len(active),
         "latest_execution_status": latest.get("status") if latest else None,
         "last_execution_updated_at": latest.get("updated_at") if latest else None,
+        "latest_execution_duration_seconds": execution_duration_seconds(latest) if latest else None,
+        "total_prompt_token_estimate": total_prompt_tokens,
+        "total_output_token_estimate": total_output_tokens,
+        "total_token_estimate": total_prompt_tokens + total_output_tokens,
+        "total_estimated_cost": total_cost,
+        "cost_currency": latest.get("cost_currency") if latest and latest.get("cost_currency") else "USD",
+        "average_duration_seconds": round(sum(execution_duration_seconds(item) or 0.0 for item in finished_with_duration) / len(finished_with_duration), 3) if finished_with_duration else None,
     }
 
 
@@ -956,12 +988,21 @@ def prepare_execution_record(
         for item in executions:
             if item.get("execution_id") != active.get("execution_id"):
                 continue
+            prompt_tokens = _prompt_token_estimate(root, handoff["pack_path"])
+            cost = estimate_model_cost(root, handoff["model"], prompt_tokens, int(item.get("output_token_estimate") or 0))
             item["mode"] = mode
             item["status"] = status
             item["planned_model"] = handoff["model"]
             item["fallback_models"] = route["fallback_models"]
             item["pack_path"] = handoff["pack_path"]
             item["handoff_path"] = handoff["handoff_path"]
+            item["prompt_token_estimate"] = prompt_tokens
+            item["total_token_estimate"] = cost["total_tokens"]
+            item["input_cost_per_1m"] = cost["input_cost_per_1m"]
+            item["output_cost_per_1m"] = cost["output_cost_per_1m"]
+            item["estimated_input_cost"] = cost["estimated_input_cost"]
+            item["estimated_total_cost"] = cost["estimated_total_cost"]
+            item["cost_currency"] = cost["cost_currency"]
             item["operator_note"] = note
             item["executor_id"] = executor.get("id") if executor else None
             item["executor_label"] = executor.get("label") if executor else None
@@ -980,6 +1021,8 @@ def prepare_execution_record(
             save_executions(root, executions)
             return item
 
+    prompt_tokens = _prompt_token_estimate(root, handoff["pack_path"])
+    cost = estimate_model_cost(root, handoff["model"], prompt_tokens, 0)
     execution = {
         "execution_id": next_execution_id(executions),
         "task_id": task["id"],
@@ -997,6 +1040,16 @@ def prepare_execution_record(
         "test_command": None,
         "test_result": None,
         "completion_summary": None,
+        "prompt_token_estimate": prompt_tokens,
+        "output_token_estimate": 0,
+        "total_token_estimate": cost["total_tokens"],
+        "input_cost_per_1m": cost["input_cost_per_1m"],
+        "output_cost_per_1m": cost["output_cost_per_1m"],
+        "estimated_input_cost": cost["estimated_input_cost"],
+        "estimated_output_cost": cost["estimated_output_cost"],
+        "estimated_total_cost": cost["estimated_total_cost"],
+        "cost_currency": cost["cost_currency"],
+        "duration_seconds": None,
         "executor_id": executor.get("id") if executor else None,
         "executor_label": executor.get("label") if executor else None,
         "executor_command": None,
@@ -1104,6 +1157,30 @@ def _truncate_output(text: str, limit: int = 800) -> str | None:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _prompt_token_estimate(root: Path, relative_pack_path: str | None) -> int:
+    if not relative_pack_path:
+        return 0
+    path = root / relative_pack_path
+    if not path.exists():
+        return 0
+    return estimate_tokens(path.read_text(encoding="utf-8"))
+
+
+def execution_duration_seconds(execution: dict | None) -> float | None:
+    if not execution:
+        return None
+    if execution.get("duration_seconds") is not None:
+        return float(execution["duration_seconds"])
+    started_at = str(execution.get("started_at") or "").strip()
+    finished_at = str(execution.get("finished_at") or "").strip()
+    if not started_at or not finished_at:
+        return None
+    try:
+        return round((datetime.fromisoformat(finished_at) - datetime.fromisoformat(started_at)).total_seconds(), 3)
+    except ValueError:
+        return None
 
 
 def _auto_attach_executor_session(root: Path, execution_id: str, executor: dict, stdout: str, stderr: str) -> dict | None:

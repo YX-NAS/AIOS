@@ -411,6 +411,12 @@ function renderExecution(task, execution) {
     <div class="muted">终端继续时间：${execution.executor_terminal_launch_at || "-"}</div>
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
+    <div class="muted">执行时长：${execution.duration_seconds != null ? `${Number(execution.duration_seconds).toFixed(2)}s` : "-"}</div>
+    <div class="muted">Prompt Token：${execution.prompt_token_estimate || 0}</div>
+    <div class="muted">输出 Token：${execution.output_token_estimate || 0}</div>
+    <div class="muted">总 Token：${execution.total_token_estimate || 0}</div>
+    <div class="muted">估算输入成本：${execution.estimated_input_cost != null ? `${execution.estimated_input_cost} ${execution.cost_currency || "USD"}` : "-"}</div>
+    <div class="muted">估算总成本：${execution.estimated_total_cost != null ? `${execution.estimated_total_cost} ${execution.cost_currency || "USD"}` : "-"}</div>
     <div class="muted">测试结果：${execution.test_result || "-"}</div>
     <div class="muted">提交后版本：${execution.git_commit_after || "-"}</div>
     <div class="muted">Push 远端：${execution.auto_push_remote || "-"}</div>

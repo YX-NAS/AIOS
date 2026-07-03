@@ -126,6 +126,9 @@ def test_model_library_persists_auth_env_vars(tmp_path: Path, monkeypatch) -> No
                 "endpoint": "https://provider.example.com/v1",
                 "config_url": "https://provider.example.com/config.json",
                 "auth_env_vars": ["CUSTOM_PROVIDER_TOKEN", "CUSTOM_PROVIDER_SECRET"],
+                "input_cost_per_1m": 1.2,
+                "output_cost_per_1m": 4.5,
+                "cost_currency": "USD",
                 "enabled": True,
                 "rank": 3,
                 "task_types": ["complex_coding"],
@@ -133,9 +136,13 @@ def test_model_library_persists_auth_env_vars(tmp_path: Path, monkeypatch) -> No
         )
         assert status == 201
         assert payload["model"]["auth_env_vars"] == ["CUSTOM_PROVIDER_TOKEN", "CUSTOM_PROVIDER_SECRET"]
+        assert payload["model"]["input_cost_per_1m"] == 1.2
+        assert payload["model"]["output_cost_per_1m"] == 4.5
     finally:
         handle.close()
 
     models = load_model_library()
     created = next(model for model in models if model["id"] == "custom-provider-model")
     assert created["auth_env_vars"] == ["CUSTOM_PROVIDER_TOKEN", "CUSTOM_PROVIDER_SECRET"]
+    assert created["input_cost_per_1m"] == 1.2
+    assert created["output_cost_per_1m"] == 4.5

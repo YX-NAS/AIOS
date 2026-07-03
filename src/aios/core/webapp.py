@@ -667,6 +667,13 @@ def execution_summary_empty() -> dict:
         "active_execution_count": 0,
         "latest_execution_status": None,
         "last_execution_updated_at": None,
+        "latest_execution_duration_seconds": None,
+        "total_prompt_token_estimate": 0,
+        "total_output_token_estimate": 0,
+        "total_token_estimate": 0,
+        "total_estimated_cost": 0.0,
+        "cost_currency": "USD",
+        "average_duration_seconds": None,
     }
 
 
