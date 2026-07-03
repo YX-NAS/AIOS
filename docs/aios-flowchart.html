@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AIOS 使用流程图</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.15.0/dist/mermaid.min.js" integrity="sha384-yQ4mmBBT+vhTAwjFH0toJXNYJ6O4usWnt6EPIdWwrRvx2V/n5lXuDZQwQFeSFydF" crossorigin="anonymous"></script>
+<style>
+:root { color-scheme: light; }
+body {
+  margin: 0; padding: 40px 20px;
+  background: #f8f9fa;
+  font-family: "PingFang SC", "Noto Sans SC", "Inter", sans-serif;
+  color: #1a1a2e;
+}
+.container { max-width: 1100px; margin: 0 auto; }
+h1 { font-size: 28px; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.02em; }
+.subtitle { color: #666; font-size: 14px; margin: 0 0 32px; }
+.flow-section { margin-bottom: 48px; }
+.flow-section h2 {
+  font-size: 17px; font-weight: 700; margin: 0 0 12px;
+  padding-left: 12px; border-left: 3px solid #4f46e5;
+}
+.mermaid {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px;
+  overflow-x: auto;
+}
+.note {
+  margin-top: 12px; font-size: 13px; color: #888;
+  line-height: 1.6;
+}
+.note strong { color: #4f46e5; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>AIOS 使用流程</h1>
+  <p class="subtitle">从零到全自动交付的完整路径</p>
+
+  <div class="flow-section">
+    <h2>一、项目初始化 &amp; 准备</h2>
+    <pre class="mermaid">
+flowchart TD
+    A["📁 进入项目目录"] --> B["aios init --name my-project"]
+    B --> C["aios scan"]
+    C --> D["aios repo map"]
+    D --> E["aios repo index"]
+    E --> F["✅ 项目已就绪<br/>.aios/ 目录创建完成<br/>文件索引 + 仓库地图已生成"]
+
+    style A fill:#f0f4ff,stroke:#4f46e5
+    style F fill:#ecfdf5,stroke:#059669
+    </pre>
+    <p class="note"><strong>做了什么：</strong>创建知识目录、扫描项目文件结构、生成仓库结构化地图和搜索索引，为后续智能文件选取打基础。</p>
+  </div>
+
+  <div class="flow-section">
+    <h2>二、任务拆解与准备</h2>
+    <pre class="mermaid">
+flowchart TD
+    G["💡 输入目标"] --> H["aios task plan<br/>'开发会员积分系统，包含<br/>积分获取、积分扣减、<br/>明细查询和后台管理'"]
+    H --> I["生成拆分草案"]
+    I --> J{审阅草案}
+    J -->|调整| K["Web UI 中修改<br/>标题/验收标准/模型"]
+    K --> J
+    J -->|确认| L["aios task draft confirm"]
+    L --> M["✅ 任务已创建<br/>每个任务有明确类型、<br/>推荐模型、验收标准、<br/>依赖关系"]
+
+    G --> N["简单任务直接创建"]
+    N --> O["aios task create '修复登录报错'"]
+
+    style G fill:#f0f4ff,stroke:#4f46e5
+    style M fill:#ecfdf5,stroke:#059669
+    style O fill:#ecfdf5,stroke:#059669
+    </pre>
+    <p class="note"><strong>做了什么：</strong>把自然语言需求拆成结构化任务树。复杂目标自动拆为"系统边界分析 → 接口设计 → 各模块实现 → 测试 → 文档"的任务链，每个子任务有依赖关系。</p>
+  </div>
+
+  <div class="flow-section">
+    <h2>三、上下文准备（AIOS 独特价值）</h2>
+    <pre class="mermaid">
+flowchart TD
+    P["📋 选择一个 ready 任务"] --> Q["aios route TASK-ID"]
+    Q --> R["查看推荐模型和 fallback 链"]
+    R --> S["aios pack TASK-ID --smart"]
+    S --> T["生成 Context Pack"]
+    T --> U{质量检查}
+    U -->|相关度低| V["手动标注关键文件<br/>优化任务标题关键词"]
+    V --> S
+    U -->|Token 超限| W["aios pack TASK-ID --budget 50000"]
+    W --> S
+    U -->|通过| X["✅ Context Pack 就绪<br/>智能选取最相关文件<br/>Token 在预算范围内<br/>质量评分通过"]
+
+    style P fill:#f0f4ff,stroke:#4f46e5
+    style X fill:#ecfdf5,stroke:#059669
+    </pre>
+    <p class="note"><strong>做了什么：</strong>不像纯 CLI 那样把整个仓库塞给模型。AIOS 根据任务类型和关键词智能选取最相关的文件，控制在目标模型的 token 预算内，生成质量评分。大仓库下这个步骤的收益最明显。</p>
+  </div>
+
+  <div class="flow-section">
+    <h2>四、全自动执行（核心链路）</h2>
+    <pre class="mermaid">
+flowchart TD
+    Y["🚀 启动自动执行"] --> Z["aios run auto<br/>--executor codex-cli<br/>--auto-finish<br/>--verify-command 'pytest -q'<br/>--auto-commit<br/>--auto-push<br/>--auto-pr"]
+    Z --> AA["调度器选择下一条 ready 任务"]
+    AA --> AB["AIOS 准备 Context Pack<br/>拼接 handoff prompt"]
+    AB --> AC["subprocess 调起 Codex CLI"]
+    AC --> AD["Codex CLI 调用模型 API<br/>模型执行编码/修复"]
+    AD --> AE{执行结果}
+    AE -->|成功| AF["AIOS 运行验证命令<br/>pytest -q"]
+    AE -->|失败| AG["AIOS 分析失败类型"]
+    AG --> AH{失败分类}
+    AH -->|验证失败| AI["切换到 fallback 模型<br/>自动重新派发一次"]
+    AH -->|网络/超时| AJ["同模型自动重试<br/>受分类级次数上限控制"]
+    AI --> AB
+    AJ --> AB
+    AF --> AK{验证结果}
+    AK -->|通过| AL["aios run finish<br/>自动填写完成记录"]
+    AK -->|失败| AI
+    AL --> AM["git commit<br/>自动本地提交"]
+    AM --> AN["git push<br/>自动推送特性分支"]
+    AN --> AO["GitHub Draft PR<br/>自动创建"]
+    AO --> AP["✅ 交付完成<br/>执行记录 + changelog<br/>+ memory 全部更新"]
+
+    style Y fill:#f0f4ff,stroke:#4f46e5
+    style AP fill:#ecfdf5,stroke:#059669
+    </pre>
+    <p class="note"><strong>关键区别：</strong>这里 AIOS 不调模型 API。它通过 subprocess 调起 Codex CLI / Claude Code CLI，由那些 CLI 自己去调 API。AIOS 负责的是编排层——选任务、组上下文、调起执行器、监控状态、跑验证、处理失败、自动交付。<br/><br/>
+    <strong>ccswitch 已被绕过：</strong>CLI 模式通过 --model 参数直接指定模型，不再需要人工在 ccswitch 中切换模型。调度器会自动推进，不卡在 bridge 确认步骤。</p>
+  </div>
+
+  <div class="flow-section">
+    <h2>五、审查 &amp; 闭环</h2>
+    <pre class="mermaid">
+flowchart TD
+    AQ["👀 任务完成"] --> AR["aios review create TASK-ID<br/>--focus correctness code_quality"]
+    AR --> AS["自动创建审查任务<br/>路由到不同模型"]
+    AS --> AT["审查模型执行审查"]
+    AT --> AU{审查结论}
+    AU -->|approved| AV["✅ 任务最终交付"]
+    AU -->|changes_requested| AW["任务状态回退 todo<br/>记录审查反馈"]
+    AW --> AX["aios run auto 重新派发<br/>自动延续修复"]
+    AX --> AQ
+
+    style AQ fill:#f0f4ff,stroke:#4f46e5
+    style AV fill:#ecfdf5,stroke:#059669
+    </pre>
+    <p class="note"><strong>做了什么：</strong>审查用和实现不同的模型，避免"自己审自己"的盲区。审查不通过时自动回退任务状态，下一次 run auto 会自动拾取并修复。</p>
+  </div>
+
+  <div class="flow-section">
+    <h2>六、多项目管理（Launcher 视角）</h2>
+    <pre class="mermaid">
+flowchart TD
+    BA["🖥️ 启动 Launcher"] --> BB["aios launcher --port 8755"]
+    BB --> BC["添加项目 A / B / C"]
+    BC --> BD["Launcher 首页"]
+    BD --> BE["查看每个项目的<br/>任务数、执行状态、<br/>成本累计、预算剩余"]
+    BD --> BF["管理全局模型库<br/>模型定价 / 就绪状态 / 探测"]
+    BD --> BG["一键启动/停止<br/>各项目的 Web UI"]
+    BG --> BH["打开项目 → 单项目控制台<br/>进入流程二~五"]
+
+    style BA fill:#f0f4ff,stroke:#4f46e5
+    style BH fill:#ecfdf5,stroke:#059669
+    </pre>
+  </div>
+
+  <div class="flow-section">
+    <h2>七、AIOS 不做什么</h2>
+    <pre class="mermaid">
+flowchart LR
+    CA["AIOS ❌ 不调用模型 API"] --> CB["AIOS ❌ 不生成代码"]
+    CC["AIOS ✅ 管理任务生命周期"] --> CD["AIOS ✅ 准备结构化上下文"]
+    CE["AIOS ✅ 调起外部执行器"] --> CF["AIOS ✅ 自动化交付流程"]
+    CG["AIOS ✅ 跨模型审查编排"] --> CH["AIOS ✅ 成本追踪和预算控制"]
+
+    style CA fill:#fef2f2,stroke:#dc2626
+    style CB fill:#fef2f2,stroke:#dc2626
+    style CC fill:#ecfdf5,stroke:#059669
+    style CD fill:#ecfdf5,stroke:#059669
+    style CE fill:#ecfdf5,stroke:#059669
+    style CF fill:#ecfdf5,stroke:#059669
+    style CG fill:#ecfdf5,stroke:#059669
+    style CH fill:#ecfdf5,stroke:#059669
+    </pre>
+  </div>
+
+</div>
+<script>mermaid.initialize({ startOnLoad: true, securityLevel: "loose", theme: "neutral" });</script>
+</body>
+</html>
