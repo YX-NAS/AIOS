@@ -1,6 +1,16 @@
-# AIOS 多模型开发中枢
+# AIOS 多模型开发中枢 v0.38
 
 AIOS 是一个本地文件系统型本地开发中枢，当前同时提供 CLI 和 Web UI，用来为软件项目生成 `.aios/` 知识目录、扫描项目结构、管理开发任务、推荐模型路由，并生成可复制给不同 AI 模型的 Context Pack。
+
+## v0.38 新增能力
+
+本轮迭代核心是强化"仓库上下文检索"、"执行安全护栏"和"跨模型审查"三大能力：
+
+- **仓库上下文检索增强**：`aios repo map` 生成结构化仓库地图，`aios repo search` 提供有界上下文文件搜索，`aios pack TASK-ID --smart` 智能选取相关文件
+- **执行安全护栏**：`aios guard status` 监控执行卡死和 doom-loop，`aios guard heartbeat` 提供心跳存活检测
+- **跨模型审查工作流**：`aios review create` 自动创建跨模型审查任务，`aios review complete` 结构化审查结论回写
+- **弹性上下文管理**：token 预算控制、上下文质量评分、分层裁剪策略
+- **会话智能续接**：`aios session snapshot` / `aios session restore` / `aios session resume` 提供执行中断后的智能恢复
 
 详细中文操作说明见 [docs/AIOS_使用说明操作手册.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/AIOS_使用说明操作手册.md)。  
 当前版本价值说明见 [docs/AIOS_当前版本价值说明.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/AIOS_当前版本价值说明.md)。  

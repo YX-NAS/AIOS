@@ -103,3 +103,53 @@ def get_recent_diff(root: Path, max_files: int = 50) -> list[str]:
         return []
     files = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
     return files[:max_files]
+
+
+def git_snapshot(root: Path) -> dict:
+    """Take a snapshot of the git state for an execution record."""
+    status_map = collect_git_status(root)
+    status_codes: dict[str, int] = {}
+    for _, label in status_map.items():
+        status_codes[label] = status_codes.get(label, 0) + 1
+
+    return {
+        "is_git_repo": is_git_repo(root),
+        "branch": get_current_branch(root),
+        "commit": get_current_commit(root),
+        "is_clean": len(status_map) == 0,
+        "status_map": status_codes,
+    }
+
+
+def git_changed_files(root: Path, max_count: int = 50) -> list[str]:
+    """Return list of recently changed files (from git log).
+
+    Args:
+        root: Project root.
+        max_count: Maximum number of recent commits to scan.
+
+    Returns:
+        List of relative file paths.
+    """
+    if not is_git_repo(root):
+        return []
+    try:
+        result = subprocess.run(
+            ["git", "log", f"--max-count={max_count}", "--name-only", "--pretty=format:", "--diff-filter=AM"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0:
+        return []
+    files: list[str] = []
+    seen: set[str] = set()
+    for line in result.stdout.splitlines():
+        clean = line.strip()
+        if clean and clean not in seen:
+            seen.add(clean)
+            files.append(clean)
+    return files[:max_count]

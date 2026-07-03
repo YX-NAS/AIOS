@@ -53,6 +53,11 @@ from aios.core.tasks import (
     load_tasks,
     plan_goal,
 )
+from aios.core.bounded_search import context_search_summary as search_summary_fn
+from aios.core.guard import guard_summary as guard_status_fn
+from aios.core.repo_map import load_repo_map, generate_repo_map
+from aios.core.review import get_review_for_task
+from aios.core.session_persist import restore_execution_from_snapshot
 from aios.utils.json_utils import read_json
 
 
@@ -142,6 +147,44 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json({"packs": list_packs(self.project_root)})
                 if parsed.path == "/api/executors":
                     return self._send_json(executor_summary())
+                if parsed.path == "/api/repo-map":
+                    repo_map = load_repo_map(self.project_root)
+                    if not repo_map:
+                        repo_map = generate_repo_map(self.project_root)
+                    repo_map.pop("_source", None)
+                    return self._send_json(repo_map)
+                if parsed.path == "/api/repo-search":
+                    qs = parse_qs(parsed.query)
+                    query = qs.get("query", [""])[0]
+                    if not query:
+                        return self._send_json({"results": [], "query": ""})
+                    from aios.core.bounded_search import context_search_summary
+                    return self._send_json(context_search_summary(self.project_root, query))
+                if parsed.path == "/api/guard/status":
+                    qs = parse_qs(parsed.query)
+                    task_id = qs.get("task_id", [""])[0]
+                    if not task_id:
+                        return self._send_json({"status": "error", "message": "Missing task_id parameter."})
+                    exec_data = latest_execution_for_task(self.project_root, task_id)
+                    if not exec_data:
+                        return self._send_json({"status": "error", "message": "No execution found."})
+                    from aios.core.guard import guard_summary
+                    return self._send_json(guard_summary(self.project_root, exec_data.get("execution_id")))
+                if parsed.path == "/api/review/task":
+                    qs = parse_qs(parsed.query)
+                    task_id = qs.get("task_id", [""])[0]
+                    if not task_id:
+                        return self._send_json({"review": None})
+                    from aios.core.review import get_review_for_task
+                    return self._send_json({"review": get_review_for_task(self.project_root, task_id)})
+                if parsed.path == "/api/session/health":
+                    qs = parse_qs(parsed.query)
+                    task_id = qs.get("task_id", [""])[0]
+                    if not task_id:
+                        return self._send_json({"status": "error"})
+                    execution_id_found = qs.get("execution_id", [None])[0]
+                    from aios.core.session_persist import restore_execution_from_snapshot
+                    return self._send_json(restore_execution_from_snapshot(self.project_root, task_id, execution_id=execution_id_found))
                 if parsed.path == "/api/handoffs":
                     return self._send_json({"handoffs": list_handoffs(self.project_root)})
                 if parsed.path == "/api/ccswitch/export":
