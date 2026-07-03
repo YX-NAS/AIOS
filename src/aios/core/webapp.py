@@ -630,6 +630,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "handoffs": list_handoffs(self.project_root) if initialized else [],
                 "enabled_model_count": model_summary()["enabled_model_count"],
                 "provider_ready_count": model_summary()["provider_ready_count"],
+                "provider_handshake_ready_count": model_summary()["provider_handshake_ready_count"],
+                "provider_handshake_failed_count": model_summary()["provider_handshake_failed_count"],
                 "enabled_executor_count": executor_summary()["enabled_executor_count"],
                 "available_executor_count": executor_summary()["available_executor_count"],
                 "runtime_policy": runtime_policy_summary(self.project_root) if initialized else runtime_policy_empty(),

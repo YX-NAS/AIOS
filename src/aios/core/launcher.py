@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from aios.core.instance_manager import DEFAULT_HOST, start_project_instance, stop_project_instance
-from aios.core.models import create_model, delete_model, model_summary, reset_model_library, update_model
+from aios.core.models import create_model, delete_model, model_summary, probe_models, reset_model_library, update_model
 from aios.core.scanner import scan_project
 from aios.core.projects import get_project, list_project_summaries, project_summary, register_project, update_project
 from aios.utils.text import now_iso
@@ -113,6 +113,19 @@ def start_launcher_server(host: str = DEFAULT_HOST, port: int = 8755) -> Launche
                 if parsed.path == "/api/models/reset":
                     models = reset_model_library()
                     return self._send_json({"message": "Model library reset.", "models": models})
+                if parsed.path == "/api/models/probe":
+                    results = probe_models(
+                        None,
+                        (payload.get("model_id") or "").strip() or None,
+                        timeout_seconds=float(payload.get("timeout") or 3.0),
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Model provider probe completed.",
+                            "results": results,
+                            **model_summary(),
+                        }
+                    )
                 if parsed.path == "/api/projects/open":
                     project_id = payload.get("project_id")
                     if not project_id:

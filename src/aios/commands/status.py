@@ -58,6 +58,11 @@ def run_status(root: Path, args: argparse.Namespace) -> None:
         f"{models['provider_ready_count']} ready / "
         f"{models['enabled_model_count']} enabled models"
     )
+    print(
+        "Handshake: "
+        f"{models['provider_handshake_ready_count']} ok / "
+        f"{models['provider_handshake_failed_count']} failed"
+    )
     if file_index:
         print(f"Files indexed: {file_index.get('summary', {}).get('file_count', 0)}")
     else:

@@ -134,7 +134,7 @@ function renderStatus() {
     elements.statusPill.textContent = "Initialized";
     elements.statusPill.className = "status-pill ready";
     elements.projectBadge.classList.remove("hidden");
-    elements.statusText.textContent = `项目路径：${status.root}`;
+    elements.statusText.textContent = `项目路径：${status.root} | Provider 握手：${status.provider_handshake_ready_count || 0} 正常 / ${status.provider_handshake_failed_count || 0} 失败`;
     elements.initEmptyState.classList.add("hidden");
     elements.projectStatus.classList.remove("hidden");
     elements.scanButton.disabled = false;

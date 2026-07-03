@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+import aios.core.models as models_core
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.models import load_model_library
 from aios.core.launcher import start_launcher_server
@@ -249,5 +251,33 @@ def test_launcher_global_model_library_api(tmp_path: Path, monkeypatch) -> None:
         assert status_code == 200
         assert any(model["id"] == "claude" for model in reset_payload["models"])
         assert all(model["id"] != "claude-sonnet" for model in reset_payload["models"])
+    finally:
+        handle.close()
+
+
+def test_launcher_model_probe_api_updates_runtime_handshake(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    def fake_urlopen(request, timeout=3.0):
+        raise URLError("connection refused")
+
+    monkeypatch.setattr(models_core, "urlopen", fake_urlopen)
+
+    handle = start_launcher_server(port=0)
+    try:
+        status_code, probe_payload = request_json(
+            handle.url,
+            "/api/models/probe",
+            method="POST",
+            payload={"model_id": "gpt-5.5", "timeout": 1.0},
+        )
+        assert status_code == 200
+        result = probe_payload["results"][0]
+        assert result["model_id"] == "gpt-5.5"
+        assert result["status"] == "failed"
+        model = next(item for item in probe_payload["models"] if item["id"] == "gpt-5.5")
+        assert model["runtime"]["handshake_status"] == "failed"
+        assert model["runtime"]["ready"] is False
     finally:
         handle.close()

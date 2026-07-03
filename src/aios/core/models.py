@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from aios.core.instance_manager import ensure_state_dir
 from aios.core.templates import DEFAULT_ROUTING
 from aios.utils.json_utils import read_json, write_json
+from aios.utils.text import now_iso
 
 
 TASK_TYPES = list(DEFAULT_ROUTING.keys())
@@ -82,6 +86,10 @@ def infer_provider(model_id: str) -> str:
 
 def model_library_path(root: Path | None = None) -> Path:
     return ensure_state_dir() / "models.json"
+
+
+def model_handshake_cache_path(root: Path | None = None) -> Path:
+    return ensure_state_dir() / "model-handshakes.json"
 
 
 def load_model_library(root: Path | None = None) -> list[dict]:
@@ -240,6 +248,8 @@ def model_summary(root: Path | None = None) -> dict:
         "task_types": TASK_TYPES,
         "enabled_model_count": len([model for model in models if model["enabled"]]),
         "provider_ready_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["ready"]]),
+        "provider_handshake_ready_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["handshake_status"] == "ok"]),
+        "provider_handshake_failed_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["handshake_status"] == "failed"]),
         "priced_model_count": len([model for model in models if model.get("input_cost_per_1m") is not None or model.get("output_cost_per_1m") is not None]),
     }
 
@@ -289,6 +299,83 @@ def default_auth_env_vars(provider: str) -> list[str]:
     return list(DEFAULT_PROVIDER_AUTH_ENV_VARS.get(str(provider or "").strip().lower(), []))
 
 
+def load_model_handshakes(root: Path | None = None) -> dict[str, dict]:
+    payload = read_json(model_handshake_cache_path(root), {"models": {}})
+    models = payload.get("models")
+    if isinstance(models, dict):
+        return models
+    return {}
+
+
+def save_model_handshakes(root: Path | None, items: dict[str, dict]) -> None:
+    write_json(model_handshake_cache_path(root), {"models": items})
+
+
+def latest_model_handshake(root: Path | None, model_id: str) -> dict | None:
+    return load_model_handshakes(root).get(str(model_id or "").strip()) or None
+
+
+def probe_model_provider(root: Path | None, model_id: str, timeout_seconds: float = 3.0) -> dict:
+    model = get_model(root, model_id)
+    if not model:
+        raise ValueError(f"Model not found: {model_id}")
+    runtime = model_runtime_status(model)
+    target_url = runtime.get("endpoint") or runtime.get("config_url")
+    if not target_url:
+        result = {
+            "model_id": model["id"],
+            "status": "failed",
+            "target_url": None,
+            "checked_at": now_iso(),
+            "http_status": None,
+            "latency_ms": None,
+            "reason": "Provider endpoint or config URL is missing.",
+        }
+        _save_model_handshake(root, model["id"], result)
+        return result
+
+    started = time.perf_counter()
+    request = Request(
+        target_url,
+        headers={
+            "User-Agent": "AIOS/handshake",
+            "Accept": "application/json, text/plain, */*",
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            http_status = response.status
+            status = "ok" if 200 <= http_status < 500 else "failed"
+            reason = None if status == "ok" else f"Unexpected HTTP status: {http_status}"
+    except HTTPError as exc:
+        http_status = exc.code
+        status = "ok" if 200 <= exc.code < 500 else "failed"
+        reason = None if status == "ok" else f"Provider returned HTTP {exc.code}"
+    except URLError as exc:
+        http_status = None
+        status = "failed"
+        reason = str(exc.reason or exc)
+
+    result = {
+        "model_id": model["id"],
+        "status": status,
+        "target_url": target_url,
+        "checked_at": now_iso(),
+        "http_status": http_status,
+        "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        "reason": reason,
+    }
+    _save_model_handshake(root, model["id"], result)
+    return result
+
+
+def probe_models(root: Path | None, model_id: str | None = None, timeout_seconds: float = 3.0) -> list[dict]:
+    if model_id:
+        return [probe_model_provider(root, model_id, timeout_seconds=timeout_seconds)]
+    return [probe_model_provider(root, model["id"], timeout_seconds=timeout_seconds) for model in load_model_library(root)]
+
+
 def model_runtime_status(model: dict) -> dict:
     provider = str(model.get("provider") or "").strip().lower()
     endpoint = str(model.get("endpoint") or "").strip()
@@ -298,7 +385,9 @@ def model_runtime_status(model: dict) -> dict:
     missing_env_vars = [name for name in auth_env_vars if name not in present_env_vars]
     auth_status = "ready" if auth_env_vars and not missing_env_vars else ("not_configured" if not auth_env_vars else "missing_env")
     provider_config_status = "ready" if endpoint or config_url else "missing_config"
-    ready = bool(provider and provider_config_status == "ready" and auth_status == "ready")
+    handshake = latest_model_handshake(None, model.get("id") or "")
+    handshake_status = str((handshake or {}).get("status") or "unknown").strip().lower()
+    ready = bool(provider and provider_config_status == "ready" and auth_status == "ready" and handshake_status != "failed")
     if not provider:
         reason = "Provider is not configured."
     elif provider_config_status != "ready":
@@ -307,6 +396,8 @@ def model_runtime_status(model: dict) -> dict:
         reason = f"Missing auth env vars: {', '.join(missing_env_vars)}"
     elif auth_status == "not_configured":
         reason = "No auth env vars configured for this provider."
+    elif handshake_status == "failed":
+        reason = (handshake or {}).get("reason") or "Provider handshake failed."
     else:
         reason = None
     return {
@@ -318,8 +409,20 @@ def model_runtime_status(model: dict) -> dict:
         "missing_auth_env_vars": missing_env_vars,
         "endpoint": endpoint or None,
         "config_url": config_url or None,
+        "handshake_status": handshake_status,
+        "handshake_checked_at": (handshake or {}).get("checked_at"),
+        "handshake_http_status": (handshake or {}).get("http_status"),
+        "handshake_latency_ms": (handshake or {}).get("latency_ms"),
+        "handshake_target_url": (handshake or {}).get("target_url"),
+        "handshake_reason": (handshake or {}).get("reason"),
         "reason": reason,
     }
+
+
+def _save_model_handshake(root: Path | None, model_id: str, result: dict) -> None:
+    items = load_model_handshakes(root)
+    items[str(model_id).strip()] = result
+    save_model_handshakes(root, items)
 
 
 def _clean_model_id(model_id: str) -> str:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from aios.core.models import get_model, model_runtime_status, model_summary
+from aios.core.models import get_model, model_runtime_status, model_summary, probe_models
 
 
 def add_model_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -12,6 +12,9 @@ def add_model_parser(subparsers: argparse._SubParsersAction) -> None:
     model_subparsers.add_parser("list", help="List models with readiness summary.")
     doctor = model_subparsers.add_parser("doctor", help="Check one model or every model.")
     doctor.add_argument("model_id", nargs="?", default=None)
+    probe = model_subparsers.add_parser("probe", help="Actively probe one model provider or all configured providers.")
+    probe.add_argument("model_id", nargs="?", default=None)
+    probe.add_argument("--timeout", type=float, default=3.0, help="HTTP timeout in seconds. Defaults to 3.0.")
 
 
 def run_model(root, args: argparse.Namespace) -> None:
@@ -46,5 +49,22 @@ def run_model(root, args: argparse.Namespace) -> None:
             print(f"  output_cost_per_1m: {model.get('output_cost_per_1m') if model.get('output_cost_per_1m') is not None else '-'}")
             print(f"  cost_currency: {model.get('cost_currency') or 'USD'}")
             print(f"  provider_config: {runtime.get('provider_config_status') or '-'}")
+            print(f"  handshake_status: {runtime.get('handshake_status') or '-'}")
+            print(f"  handshake_http_status: {runtime.get('handshake_http_status') if runtime.get('handshake_http_status') is not None else '-'}")
+            print(f"  handshake_checked_at: {runtime.get('handshake_checked_at') or '-'}")
+            print(f"  handshake_target_url: {runtime.get('handshake_target_url') or '-'}")
             print(f"  reason: {runtime.get('reason') or '-'}")
+        return
+
+    if args.model_command == "probe":
+        results = probe_models(None, args.model_id, timeout_seconds=args.timeout)
+        for result in results:
+            print(
+                f"{result['model_id']}: {result['status']} "
+                f"url={result.get('target_url') or '-'} "
+                f"http={result.get('http_status') if result.get('http_status') is not None else '-'} "
+                f"latency_ms={result.get('latency_ms') if result.get('latency_ms') is not None else '-'}"
+            )
+            print(f"  checked_at: {result.get('checked_at') or '-'}")
+            print(f"  reason: {result.get('reason') or '-'}")
         return

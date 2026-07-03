@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 
 import aios.core.ccswitch as ccswitch_core
 import aios.core.executors as executors_core
+import aios.core.models as models_core
 import aios.core.terminal_resume as terminal_resume
 from aios.core.executors import create_executor, load_executor_library
 from aios.core.executions import build_execution_resume, latest_execution_for_task, load_executions
@@ -2095,6 +2096,31 @@ def test_model_doctor_cli_reports_provider_auth_readiness(tmp_path: Path, monkey
     assert "provider_config: ready" in output
 
 
+def test_model_probe_cli_records_provider_handshake(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    class FakeResponse:
+        status = 401
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(models_core, "urlopen", lambda request, timeout=3.0: FakeResponse())
+
+    assert main(["model", "probe", "gpt-5.5"]) == 0
+    output = capsys.readouterr().out
+    assert "gpt-5.5: ok" in output
+
+    assert main(["model", "doctor", "gpt-5.5"]) == 0
+    output = capsys.readouterr().out
+    assert "handshake_status: ok" in output
+    assert "handshake_http_status: 401" in output
+
+
 def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
@@ -2103,6 +2129,7 @@ def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, caps
     assert main(["--root", str(tmp_path), "status"]) == 0
     output = capsys.readouterr().out
     assert "Providers:" in output
+    assert "Handshake:" in output
     assert "ready /" in output
     assert "Usage:" in output
     assert "Policy:" in output

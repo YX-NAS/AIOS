@@ -95,6 +95,7 @@ aios init
 aios executor list
 aios scan
 aios status
+aios model probe MODEL-ID
 aios ccswitch export TASK-ID
 aios ccswitch provider TASK-ID
 aios ccswitch session TASK-ID
@@ -281,6 +282,38 @@ aios --root /path/to/project task draft delete DRAFT-20260702-001
 - 模型库里维护的单价
 
 所以它适合做项目管理和调度参考，不等于 provider 账单原值。
+
+### 第 4.2.1 步：探测 Provider 可达性
+
+当你已经填好：
+
+- provider endpoint
+- config url
+- auth env vars
+
+还需要再确认一件事：这个 provider 现在是否真的能连上。
+
+可以直接执行：
+
+```bash
+aios model probe gpt-5.5
+```
+
+或在 launcher 的全局模型库表格里，点击对应模型行右侧的 `探测`。
+
+探测结果会写入运行时状态：
+
+- `ok`
+- `failed`
+- `unknown`
+
+判断逻辑：
+
+- `ok`：网络可达，或 provider 返回了 2xx-4xx
+- `failed`：连接失败、DNS 失败、连接被拒绝、或返回 5xx
+- `unknown`：还没有主动探测过
+
+这一步验证的是“服务是否在线可达”，不是“你的账号权限一定正确”。
 
 ### 第 4.3 步：配置项目级预算策略
 

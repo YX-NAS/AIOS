@@ -85,6 +85,7 @@ Provider / 鉴权就绪探测方案见 [docs/P3_29_DESIGN.md](/Users/yaxun/Synol
 - `aios model doctor` 可检查全局模型的 provider 配置和鉴权环境变量是否就绪
 - 全局模型库现在还能维护输入/输出单价，执行记录会按 Context Pack 和执行输出估算 token、成本与耗时
 - 单项目 Web UI 现在还能配置项目级预算策略，自动派发会在预算超限或模型未定价时主动停下
+- 全局模型库现在还能主动探测 provider 可达性，把“已配置”继续推进到“最近一次握手正常”
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 - 自动重试当前只做“一次受控 fallback 重试”，不会无限循环切模型
@@ -119,6 +120,8 @@ aios executor doctor
 aios model list
 aios model doctor
 aios model doctor gpt-5.5
+aios model probe
+aios model probe gpt-5.5
 aios scan
 aios task create "实现登录功能"
 aios task plan "完成聊天接口时间上下文修复"
@@ -209,6 +212,7 @@ http://127.0.0.1:8765
 - 自动 push 当前特性分支
 - 自动创建 Draft PR
 - 在全局模型库维护模型单价，并在项目页 / launcher 查看 token、估算成本和执行时长
+- 在全局模型库一键探测 provider 可达性，并把握手结果同步到 launcher、项目页和 CLI
 - 生成并复制 ccswitch Deep Link
 - 生成并复制 Provider Deep Link
 - 导出并复制 Session Handoff
