@@ -20,6 +20,8 @@ from aios.core.ccswitch import (
 )
 from aios.core.context_builder import build_context_pack
 from aios.core.auto_switch import run_auto_pipeline_step
+from aios.core.pipeline import run_full_pipeline
+from aios.core.takeover import enqueue_takeover, load_takeover_queue, resolve_takeover, takeover_summary
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
 from aios.core.executions import (
@@ -113,6 +115,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "execution": with_bridge_runtime_signal(self.project_root, latest_execution_for_task(self.project_root, task_id)),
                         }
                     )
+                if parsed.path == "/api/run/takeover":
+                    return self._send_json({"takeover": takeover_summary(self.project_root)})
                 if parsed.path.startswith("/api/run/task/"):
                     task_id = parsed.path.rsplit("/", 1)[-1]
                     return self._send_json({"execution": with_bridge_runtime_signal(self.project_root, latest_execution_for_task(self.project_root, task_id))})
@@ -551,6 +555,32 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         },
                         status=HTTPStatus.CREATED,
                     )
+                if parsed.path == "/api/run/full-pipeline":
+                    full_result = run_full_pipeline(
+                        self.project_root,
+                        executor_id=(payload.get("executor_id") or "").strip() or None,
+                        model=(payload.get("model") or "").strip() or None,
+                        auto_switch=bool(payload.get("auto_switch")),
+                        switch_delay=float(payload.get("switch_delay") or 2.0),
+                        max_tasks=int(payload.get("max_tasks") or 20),
+                        step_delay_seconds=float(payload.get("step_delay") or 1.0),
+                    )
+                    return self._send_json(
+                        {"message": "Full pipeline completed." if full_result["pipeline_completed"] else "Pipeline stopped.", **full_result},
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/run/takeover":
+                    tq = takeover_summary(self.project_root)
+                    return self._send_json({"takeover": tq})
+                if parsed.path.startswith("/api/run/takeover/") and parsed.path.endswith("/resolve"):
+                    takeover_id = parsed.path.split("/")[4]
+                    resolution = (payload.get("note") or "").strip()
+                    if not resolution:
+                        raise ValueError("Resolution note is required.")
+                    entry = resolve_takeover(self.project_root, takeover_id, resolution)
+                    if not entry:
+                        raise ValueError(f"Takeover entry not found: {takeover_id}")
+                    return self._send_json({"message": "Takeover resolved.", "entry": entry})
                 if parsed.path == "/api/run/pipeline":
                     result = run_auto_pipeline_step(
                         self.project_root,

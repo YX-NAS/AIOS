@@ -18,6 +18,7 @@ from aios.core.executions import (
     run_executor_with_auto_finish,
 )
 from aios.core.auto_switch import run_auto_pipeline_step
+from aios.core.pipeline import run_full_pipeline
 from aios.core.runtime_policy import load_runtime_policy
 
 
@@ -59,10 +60,25 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--limit", type=int, default=5, help="Maximum historical session suggestions to show. Defaults to 5.")
     parser.add_argument("--auto-switch", action="store_true", help="Automatically switch ccswitch model via Deep Links before execution.")
     parser.add_argument("--switch-delay", type=float, default=2.0, help="Delay in seconds between ccswitch Deep Link imports. Defaults to 2.0.")
+    parser.add_argument("--full-pipeline", action="store_true", help="Run all dispatchable tasks in sequence until the queue is empty.")
+    parser.add_argument("--max-tasks", type=int, default=20, help="Maximum tasks in one full-pipeline run. Defaults to 20.")
+    parser.add_argument("--step-delay", type=float, default=1.0, help="Delay in seconds between pipeline tasks. Defaults to 1.0.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
     if args.run_target == "pipeline":
+        if args.full_pipeline:
+            result = run_full_pipeline(
+                root,
+                executor_id=args.executor,
+                model=args.model,
+                auto_switch=args.auto_switch,
+                switch_delay=args.switch_delay,
+                max_tasks=args.max_tasks,
+                step_delay_seconds=args.step_delay,
+            )
+            _print_full_pipeline_result(result)
+            return
         result = run_auto_pipeline_step(
             root,
             executor_id=args.executor,
@@ -524,3 +540,26 @@ def _print_pipeline_result(result: dict) -> None:
     scheduler = result.get("scheduler") or {}
     if scheduler.get("next_action"):
         print(f"Next action: {scheduler['next_action']}")
+
+
+def _print_full_pipeline_result(result: dict) -> None:
+    """Print full-pipeline result in human-readable form."""
+    print(f"Pipeline: {'COMPLETED' if result['pipeline_completed'] else 'STOPPED (takeover required)'}")
+    print(f"Tasks: {result['total_tasks']} total, {result['completed_tasks']} completed, {result['failed_tasks']} failed")
+    print(f"Takeover entries: {result['takeover_entries']}")
+    print(f"Elapsed: {result['elapsed_seconds']}s")
+    print()
+
+    for task_result in result.get("task_results", []):
+        status_icon = "✓" if task_result["pipeline_status"] == "completed" else "✗"
+        print(f"  {status_icon} [{task_result['iteration']}] {task_result['task_id']} {task_result['task_title'][:60]}")
+        if task_result["pipeline_status"] != "completed":
+            print(f"     Status: {task_result['pipeline_status']}")
+
+    takeover = result.get("takeover_summary", {})
+    if takeover.get("pending", 0) > 0:
+        print(f"\n⚠ {takeover['pending']} takeover entries pending manual intervention:")
+        for entry in takeover.get("latest_pending", []):
+            print(f"  - {entry.get('takeover_id')}: {entry.get('task_id')} — {entry.get('reason', '')[:100]}")
+            if entry.get("suggested_action"):
+                print(f"    → {entry['suggested_action']}")
