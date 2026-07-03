@@ -62,6 +62,10 @@ def scheduler_summary(root: Path) -> dict:
 def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> dict:
     execution = with_bridge_runtime_signal(root, latest_execution_for_task(root, task["id"]))
     bridge_confirmation_status = str(execution.get("ccswitch_bridge_effective_confirmation_status") or execution.get("ccswitch_bridge_confirmation_status") or "").strip() if execution else ""
+    # CLI command executors pass the model directly via --model flag,
+    # so ccswitch bridge confirmation is not required for dispatching.
+    # Only manual-mode executions need the bridge guard.
+    is_cli_mode = bool(execution and execution.get("mode") == "cli")
     dependency_ids = task.get("depends_on_task_ids") or []
     unmet_dependencies = [task_id for task_id in dependency_ids if task_map.get(task_id, {}).get("status") != "done"]
     pack_quality = "unknown"
@@ -88,6 +92,12 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         scheduler_state = "failed"
         next_action = execution.get("failure_next_action") or "inspect_retry"
         reason = execution.get("failure_summary") or execution.get("executor_stderr_excerpt") or "最近一次执行失败。"
+    elif is_cli_mode and bridge_confirmation_status in ("pending_confirmation", "signal_detected"):
+        # CLI executors bypass ccswitch — model is passed via --model flag.
+        # Bridge confirmation is irrelevant for automated dispatch.
+        scheduler_state = "ready"
+        next_action = "run_executor"
+        reason = "模型已由执行器命令行参数指定，bridge 对 CLI 模式透明，自动推进。"
     elif execution and bridge_confirmation_status == "confirmed_failed":
         scheduler_state = "failed"
         next_action = "retry_bridge"
