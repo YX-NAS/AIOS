@@ -5,6 +5,7 @@ from pathlib import Path
 
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executions import (
+    attempt_automatic_recovery,
     attach_execution_session,
     auto_finish_execution,
     build_execution_resume,
@@ -13,7 +14,6 @@ from aios.core.executions import (
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
-    retry_execution_after_verification_failure,
     run_executor_execution,
     run_executor_with_auto_finish,
 )
@@ -44,7 +44,8 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--auto-pr", action="store_true", help="Automatically create a draft PR after successful auto push.")
     parser.add_argument("--pr-base-branch", default="main", help="Base branch used for auto PR draft creation. Defaults to main.")
     parser.add_argument("--auto-confirm-bridge-signal", action="store_true", help="Auto-confirm bridge when a local resume signal has been detected.")
-    parser.add_argument("--retry-on-verify-fail", action="store_true", help="When verification fails, automatically retry once with the next fallback model if available.")
+    parser.add_argument("--retry-on-verify-fail", dest="auto_recover_failures", action="store_true", help="Backward-compatible alias for automatic recovery.")
+    parser.add_argument("--auto-recover-failures", dest="auto_recover_failures", action="store_true", help="Automatically recover one failed execution once based on failure type.")
     parser.add_argument("--session-id", default=None, help="External session id used for attach/resume.")
     parser.add_argument("--session-name", default=None, help="External session name used for attach/resume.")
     parser.add_argument("--session-note", default=None, help="Optional note recorded with one attached session.")
@@ -77,7 +78,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             auto_pr=args.auto_pr,
             pr_base_branch=args.pr_base_branch,
             auto_confirm_bridge_signal=args.auto_confirm_bridge_signal,
-            retry_on_verify_fail=args.retry_on_verify_fail,
+            auto_recover_failures=args.auto_recover_failures,
         )
         if not result["progressed"]:
             print(f"Auto dispatch skipped: {result['reason']}")
@@ -103,6 +104,11 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             if result.get("previous_verification"):
                 print(f"Previous verification: {result['previous_verification']['summary']}")
             print(f"Retry model: {retry.get('retry_model') or result['execution'].get('planned_model') or '-'}")
+        elif result.get("auto_recovered"):
+            recovery = result.get("recovery") or {}
+            print(f"Auto recovered task: {result['task']['id']} {result['task']['title']}")
+            print(f"Recovery strategy: {recovery.get('recovery_strategy') or '-'}")
+            print(f"Recovery trigger: {recovery.get('recovery_trigger') or result['execution'].get('failure_category') or '-'}")
         if result.get("auto_confirmed_bridge") and not result["dispatched"]:
             print(f"Bridge auto-confirmed: {result['task']['id']} {result['task']['title']}")
             print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
@@ -136,6 +142,8 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         _print_git_pr(result.get("git_pr"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
+        elif result.get("auto_recovered") and execution["status"] == "review_pending":
+            print("Next: automatic recovery has completed one new execution, but still needs review or another manual decision.")
         elif result.get("auto_retried") and execution["status"] == "review_pending":
             print("Next: fallback retry has completed one new execution, but still needs review or another manual decision.")
         elif execution["status"] == "review_pending":
@@ -309,12 +317,11 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             auto_pr=args.auto_pr,
             pr_base_branch=args.pr_base_branch,
         )
-        if result.get("verification") and not result.get("auto_finished") and args.retry_on_verify_fail:
-            retried = retry_execution_after_verification_failure(
+        if not result.get("auto_finished") and args.auto_recover_failures:
+            recovered = attempt_automatic_recovery(
                 root,
                 task_id,
                 args.executor,
-                result["verification"],
                 note=args.note,
                 auto_finish=args.auto_finish,
                 summary=args.summary,
@@ -329,8 +336,8 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
                 auto_pr=args.auto_pr,
                 pr_base_branch=args.pr_base_branch,
             )
-            if retried:
-                result = retried
+            if recovered:
+                result = recovered
         execution = result["execution"]
         route = result["route"]
         handoff = result["handoff"]
@@ -351,11 +358,16 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         if result.get("auto_retried"):
             print(f"Previous verification: {result['previous_verification']['summary']}")
             print(f"Retry model: {result['retry']['retry_model']}")
+        elif result.get("auto_recovered"):
+            print(f"Recovery strategy: {result.get('recovery', {}).get('recovery_strategy') or '-'}")
+            print(f"Recovery trigger: {result.get('recovery', {}).get('recovery_trigger') or '-'}")
         _print_git_commit(result.get("git_commit"))
         _print_git_push(result.get("git_push"))
         _print_git_pr(result.get("git_pr"))
         if result["auto_finished"]:
             print("Next: task has been auto-finished and written back to AIOS.")
+        elif result.get("auto_recovered") and execution["status"] == "review_pending":
+            print("Next: automatic recovery has completed one new execution, but still needs review or another manual decision.")
         elif result.get("auto_retried") and execution["status"] == "review_pending":
             print("Next: fallback retry has completed one new execution, but still needs review or another manual decision.")
         elif execution["status"] == "review_pending":

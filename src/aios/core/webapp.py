@@ -22,6 +22,7 @@ from aios.core.context_builder import build_context_pack
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
 from aios.core.executions import (
+    attempt_automatic_recovery,
     attach_execution_session,
     build_execution_resume,
     execution_summary,
@@ -30,7 +31,6 @@ from aios.core.executions import (
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
-    retry_execution_after_verification_failure,
     run_executor_with_auto_finish,
 )
 from aios.core.scoring import load_scores, model_score_summary
@@ -456,12 +456,11 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         bool(payload.get("auto_pr")),
                         (payload.get("pr_base_branch") or "main").strip() or "main",
                     )
-                    if result.get("verification") and not result.get("auto_finished") and bool(payload.get("retry_on_verify_fail")):
-                        retried = retry_execution_after_verification_failure(
+                    if not result.get("auto_finished") and bool(payload.get("auto_recover_failures") or payload.get("retry_on_verify_fail")):
+                        recovered = attempt_automatic_recovery(
                             self.project_root,
                             payload["task_id"],
                             payload["executor_id"],
-                            result["verification"],
                             note=(payload.get("note") or "").strip() or None,
                             auto_finish=bool(payload.get("auto_finish")),
                             summary=(payload.get("summary") or "").strip() or None,
@@ -476,8 +475,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             auto_pr=bool(payload.get("auto_pr")),
                             pr_base_branch=(payload.get("pr_base_branch") or "main").strip() or "main",
                         )
-                        if retried:
-                            result = retried
+                        if recovered:
+                            result = recovered
                     return self._send_json(
                         {
                             "message": "Executor finished.",
@@ -488,9 +487,11 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "executor": result["executor"],
                             "auto_finished": result.get("auto_finished"),
                             "auto_retried": result.get("auto_retried"),
+                            "auto_recovered": result.get("auto_recovered"),
                             "verification": result.get("verification"),
                             "previous_verification": result.get("previous_verification"),
                             "retry": result.get("retry"),
+                            "recovery": result.get("recovery"),
                             "reason": result.get("reason"),
                             "git_commit": result.get("git_commit"),
                             "git_push": result.get("git_push"),
@@ -518,7 +519,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         auto_pr=bool(payload.get("auto_pr")),
                         pr_base_branch=(payload.get("pr_base_branch") or "main").strip() or "main",
                         auto_confirm_bridge_signal=bool(payload.get("auto_confirm_bridge_signal")),
-                        retry_on_verify_fail=bool(payload.get("retry_on_verify_fail")),
+                        auto_recover_failures=bool(payload.get("auto_recover_failures") or payload.get("retry_on_verify_fail")),
                     )
                     return self._send_json(
                         {

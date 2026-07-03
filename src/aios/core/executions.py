@@ -81,6 +81,16 @@ def latest_execution_for_task(root: Path, task_id: str) -> dict | None:
     return max(matches, key=lambda item: item.get("updated_at") or item.get("finished_at") or "")
 
 
+def get_execution(root: Path, execution_id: str) -> dict | None:
+    target = str(execution_id or "").strip()
+    if not target:
+        return None
+    for item in load_executions(root):
+        if item.get("execution_id") == target:
+            return item
+    return None
+
+
 def latest_active_execution_for_task(root: Path, task_id: str) -> dict | None:
     matches = [
         item
@@ -295,7 +305,7 @@ def run_executor_execution(
         "task": get_task(root, task_id),
         "route": route,
         "handoff": handoff,
-        "execution": latest_execution_for_task(root, task_id),
+        "execution": get_execution(root, execution["execution_id"]),
         "executor": executor,
     }
 
@@ -560,7 +570,7 @@ def retry_execution_after_verification_failure(
         pr_base_branch=pr_base_branch,
     )
     if result.get("execution"):
-        update_execution(
+        updated_retry_execution = update_execution(
             root,
             result["execution"]["execution_id"],
             {
@@ -569,14 +579,99 @@ def retry_execution_after_verification_failure(
                 "retry_attempt": retry["retry_attempt"],
             },
         )
-        result["execution"] = result["execution"] | {
-            "retry_source_execution_id": retry["execution"]["execution_id"],
-            "retry_source_model": retry["failed_model"],
-            "retry_attempt": retry["retry_attempt"],
-        }
+        result["execution"] = updated_retry_execution
     result["retry"] = retry
     result["previous_verification"] = verification
     result["auto_retried"] = True
+    return result
+
+
+def attempt_automatic_recovery(
+    root: Path,
+    task_id: str,
+    executor_id: str,
+    note: str | None = None,
+    auto_finish: bool = False,
+    summary: str | None = None,
+    actual_model: str | None = None,
+    verify_command: str | None = None,
+    score: int | None = None,
+    score_note: str | None = None,
+    auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
+) -> dict | None:
+    execution = latest_execution_for_task(root, task_id)
+    if not execution:
+        return None
+
+    if execution.get("status") == "review_pending" and execution.get("failure_category") == "verification_failed":
+        verification = {
+            "summary": execution.get("test_result") or execution.get("failure_summary") or "Verification failed.",
+            "exit_code": execution.get("executor_exit_code") or 1,
+        }
+        return retry_execution_after_verification_failure(
+            root,
+            task_id,
+            executor_id,
+            verification,
+            note=note,
+            auto_finish=auto_finish,
+            summary=summary,
+            actual_model=actual_model,
+            verify_command=verify_command,
+            score=score,
+            score_note=score_note,
+            auto_commit=auto_commit,
+            auto_push=auto_push,
+            push_remote=push_remote,
+            allow_protected_push=allow_protected_push,
+            auto_pr=auto_pr,
+            pr_base_branch=pr_base_branch,
+        )
+
+    recovery = requeue_failed_execution_for_recovery(root, task_id)
+    if not recovery or not recovery.get("retried"):
+        return None
+
+    result = run_executor_with_auto_finish(
+        root,
+        task_id,
+        executor_id,
+        model=recovery["retry_model"],
+        refresh_pack=False,
+        note=note,
+        auto_finish=auto_finish,
+        summary=summary,
+        actual_model=actual_model,
+        verify_command=verify_command,
+        score=score,
+        score_note=score_note,
+        auto_commit=auto_commit,
+        auto_push=auto_push,
+        push_remote=push_remote,
+        allow_protected_push=allow_protected_push,
+        auto_pr=auto_pr,
+        pr_base_branch=pr_base_branch,
+    )
+    if result.get("execution"):
+        updated_recovery_execution = update_execution(
+            root,
+            result["execution"]["execution_id"],
+            {
+                "retry_source_execution_id": recovery["execution"]["execution_id"],
+                "retry_source_model": recovery["failed_model"],
+                "retry_attempt": recovery["retry_attempt"],
+                "recovery_strategy": recovery["recovery_strategy"],
+                "recovery_trigger": recovery["recovery_trigger"],
+            },
+        )
+        result["execution"] = updated_recovery_execution
+    result["recovery"] = recovery
+    result["auto_recovered"] = True
     return result
 
 
@@ -855,6 +950,85 @@ def requeue_execution_after_verification_failure(root: Path, task_id: str, verif
         "retry_model": retry_model,
         "remaining_fallback_models": remaining_models,
         "retry_attempt": retry_attempt,
+    }
+
+
+def requeue_failed_execution_for_recovery(root: Path, task_id: str) -> dict | None:
+    execution = latest_execution_for_task(root, task_id)
+    if not execution or execution.get("status") != "failed":
+        return None
+    if execution.get("recovery_disposition") == "queued":
+        return {
+            "retried": False,
+            "reason": "This failed execution has already been queued for automatic recovery.",
+            "task": get_task(root, task_id),
+            "execution": execution,
+            "failed_model": execution.get("actual_model") or execution.get("planned_model"),
+            "retry_model": None,
+            "retry_attempt": int(execution.get("retry_attempt") or 0),
+            "recovery_strategy": None,
+            "recovery_trigger": execution.get("failure_category"),
+        }
+
+    category = str(execution.get("failure_category") or "").strip()
+    if category not in {"provider_unreachable", "executor_timeout", "executor_nonzero_exit"}:
+        return {
+            "retried": False,
+            "reason": "Current failure category is not eligible for automatic recovery.",
+            "task": get_task(root, task_id),
+            "execution": execution,
+            "failed_model": execution.get("actual_model") or execution.get("planned_model"),
+            "retry_model": None,
+            "retry_attempt": int(execution.get("retry_attempt") or 0),
+            "recovery_strategy": None,
+            "recovery_trigger": category or None,
+        }
+
+    task = get_task(root, task_id)
+    failed_model = str(execution.get("actual_model") or execution.get("planned_model") or task.get("recommended_model") or "").strip()
+    retry_attempt = int(execution.get("retry_attempt") or 0) + 1
+    timestamp = now_iso()
+    trigger_reason = execution.get("failure_summary") or "Execution failed."
+
+    updated_execution = update_execution(
+        root,
+        execution["execution_id"],
+        {
+            "status": "retry_queued",
+            "finished_at": timestamp,
+            "updated_at": timestamp,
+            "retry_trigger": category,
+            "retry_reason": trigger_reason,
+            "retry_failed_model": failed_model or None,
+            "retry_next_model": failed_model or None,
+            "retry_attempt": retry_attempt,
+            "recovery_disposition": "queued",
+            "recovery_strategy": "rerun_same_model",
+        },
+    )
+    updated_task = update_task_fields(
+        root,
+        task_id,
+        {
+            "status": "todo",
+            "auto_recovery_count": int(task.get("auto_recovery_count") or 0) + 1,
+            "last_recovery_at": timestamp,
+            "last_recovery_reason": trigger_reason,
+            "last_recovery_execution_id": execution["execution_id"],
+            "last_recovery_trigger": category,
+            "last_recovery_strategy": "rerun_same_model",
+        },
+    )
+    return {
+        "retried": True,
+        "reason": None,
+        "task": updated_task,
+        "execution": updated_execution,
+        "failed_model": failed_model or None,
+        "retry_model": failed_model or None,
+        "retry_attempt": retry_attempt,
+        "recovery_strategy": "rerun_same_model",
+        "recovery_trigger": category,
     }
 
 

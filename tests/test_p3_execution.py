@@ -1941,6 +1941,179 @@ def test_run_dispatch_api_can_retry_once_with_fallback_after_verification_failur
         handle.close()
 
 
+def test_run_execute_api_can_auto_recover_retryable_failed_execution(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    recover_script = tmp_path / "recover_once.py"
+    recover_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "path = Path('.recover-once-count')",
+                "count = int(path.read_text(encoding='utf-8')) if path.exists() else 0",
+                "path.write_text(str(count + 1), encoding='utf-8')",
+                "if count == 0:",
+                "    sys.stderr.write('connection refused\\n')",
+                "    sys.exit(2)",
+                "print('recovered ok')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "recover-once-cli",
+        label="Recover Once CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(recover_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": task["id"],
+                "executor_id": "recover-once-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["auto_recovered"] is True
+        assert payload["auto_retried"] is not True
+        assert payload["recovery"]["recovery_strategy"] == "rerun_same_model"
+        assert payload["recovery"]["recovery_trigger"] == "provider_unreachable"
+        assert payload["execution"]["status"] == "review_pending"
+
+        executions = load_executions(tmp_path)
+        assert len(executions) == 2
+        assert executions[0]["status"] == "retry_queued"
+        assert executions[0]["failure_category"] == "provider_unreachable"
+        assert executions[1]["retry_source_execution_id"] == executions[0]["execution_id"]
+        assert executions[1]["recovery_strategy"] == "rerun_same_model"
+    finally:
+        handle.close()
+
+
+def test_run_execute_api_does_not_auto_recover_provider_auth_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    auth_fail_script = tmp_path / "auth_fail.py"
+    auth_fail_script.write_text(
+        "import sys\nsys.stderr.write('unauthorized\\n')\nsys.exit(2)\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "auth-fail-cli",
+        label="Auth Fail CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(auth_fail_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": task["id"],
+                "executor_id": "auth-fail-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload.get("auto_recovered") is not True
+        assert payload["execution"]["status"] == "failed"
+        assert payload["execution"]["failure_category"] == "provider_auth_failed"
+
+        executions = load_executions(tmp_path)
+        assert len(executions) == 1
+    finally:
+        handle.close()
+
+
+def test_run_dispatch_api_can_auto_recover_retryable_failed_execution(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    recover_script = tmp_path / "dispatch_recover_once.py"
+    recover_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "path = Path('.dispatch-recover-count')",
+                "count = int(path.read_text(encoding='utf-8')) if path.exists() else 0",
+                "path.write_text(str(count + 1), encoding='utf-8')",
+                "if count == 0:",
+                "    sys.stderr.write('connection refused\\n')",
+                "    sys.exit(2)",
+                "print('dispatch recovered')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "dispatch-recover-cli",
+        label="Dispatch Recover CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(recover_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/dispatch",
+            method="POST",
+            payload={
+                "executor_id": "dispatch-recover-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["progressed"] is True
+        assert payload["dispatched"] is True
+        assert payload["auto_recovered"] is True
+        assert payload["execution"]["status"] == "review_pending"
+        assert payload["recovery"]["recovery_trigger"] == "provider_unreachable"
+    finally:
+        handle.close()
+
+
 def test_run_dispatch_api_blocks_when_bridge_confirmation_is_pending(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_model(
