@@ -281,3 +281,44 @@ def test_launcher_model_probe_api_updates_runtime_handshake(tmp_path: Path, monk
         assert model["runtime"]["ready"] is False
     finally:
         handle.close()
+
+
+def test_launcher_model_probe_api_surfaces_provider_auth_probe(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    class FakeResponse:
+        def __init__(self, status: int):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(request, timeout=3.0):
+        if request.full_url.endswith("/models"):
+            return FakeResponse(200)
+        return FakeResponse(401)
+
+    monkeypatch.setattr(models_core, "urlopen", fake_urlopen)
+
+    handle = start_launcher_server(port=0)
+    try:
+        status_code, probe_payload = request_json(
+            handle.url,
+            "/api/models/probe",
+            method="POST",
+            payload={"model_id": "gpt-5.5", "timeout": 1.0},
+        )
+        assert status_code == 200
+        result = probe_payload["results"][0]
+        assert result["auth_probe_status"] == "ok"
+        assert result["auth_probe_http_status"] == 200
+        assert probe_payload["provider_api_verified_count"] >= 1
+        model = next(item for item in probe_payload["models"] if item["id"] == "gpt-5.5")
+        assert model["runtime"]["auth_probe_status"] == "ok"
+        assert model["runtime"]["ready"] is True
+    finally:
+        handle.close()

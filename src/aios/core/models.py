@@ -37,6 +37,12 @@ DEFAULT_PROVIDER_AUTH_ENV_VARS = {
     "minimax": ["MINIMAX_API_KEY"],
 }
 
+PROVIDER_AUTH_PROBE_PATHS = {
+    "openai": "/models",
+    "anthropic": "/v1/models",
+    "deepseek": "/models",
+}
+
 
 def default_model_library() -> list[dict]:
     model_tasks: dict[str, set[str]] = {}
@@ -250,6 +256,8 @@ def model_summary(root: Path | None = None) -> dict:
         "provider_ready_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["ready"]]),
         "provider_handshake_ready_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["handshake_status"] == "ok"]),
         "provider_handshake_failed_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["handshake_status"] == "failed"]),
+        "provider_api_verified_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["auth_probe_status"] == "ok"]),
+        "provider_api_failed_count": len([model for model in models if model["enabled"] and runtime[model["id"]]["auth_probe_status"] == "failed"]),
         "priced_model_count": len([model for model in models if model.get("input_cost_per_1m") is not None or model.get("output_cost_per_1m") is not None]),
     }
 
@@ -334,37 +342,34 @@ def probe_model_provider(root: Path | None, model_id: str, timeout_seconds: floa
         _save_model_handshake(root, model["id"], result)
         return result
 
-    started = time.perf_counter()
-    request = Request(
+    handshake = _run_probe_request(
         target_url,
+        timeout_seconds=timeout_seconds,
         headers={
             "User-Agent": "AIOS/handshake",
             "Accept": "application/json, text/plain, */*",
         },
-        method="GET",
+        ok_http_status=lambda code: 200 <= code < 500,
+        failure_reason=lambda code: f"Provider returned HTTP {code}",
     )
-    try:
-        with urlopen(request, timeout=timeout_seconds) as response:
-            http_status = response.status
-            status = "ok" if 200 <= http_status < 500 else "failed"
-            reason = None if status == "ok" else f"Unexpected HTTP status: {http_status}"
-    except HTTPError as exc:
-        http_status = exc.code
-        status = "ok" if 200 <= exc.code < 500 else "failed"
-        reason = None if status == "ok" else f"Provider returned HTTP {exc.code}"
-    except URLError as exc:
-        http_status = None
-        status = "failed"
-        reason = str(exc.reason or exc)
+    auth_probe = _run_auth_probe(model, runtime, timeout_seconds)
+    status = "failed" if handshake["status"] == "failed" or auth_probe["status"] == "failed" else "ok"
+    reason = auth_probe["reason"] if auth_probe["status"] == "failed" else handshake["reason"]
 
     result = {
         "model_id": model["id"],
         "status": status,
         "target_url": target_url,
         "checked_at": now_iso(),
-        "http_status": http_status,
-        "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        "http_status": handshake["http_status"],
+        "latency_ms": handshake["latency_ms"],
         "reason": reason,
+        "auth_probe_status": auth_probe["status"],
+        "auth_probe_checked_at": auth_probe["checked_at"],
+        "auth_probe_http_status": auth_probe["http_status"],
+        "auth_probe_latency_ms": auth_probe["latency_ms"],
+        "auth_probe_target_url": auth_probe["target_url"],
+        "auth_probe_reason": auth_probe["reason"],
     }
     _save_model_handshake(root, model["id"], result)
     return result
@@ -387,7 +392,14 @@ def model_runtime_status(model: dict) -> dict:
     provider_config_status = "ready" if endpoint or config_url else "missing_config"
     handshake = latest_model_handshake(None, model.get("id") or "")
     handshake_status = str((handshake or {}).get("status") or "unknown").strip().lower()
-    ready = bool(provider and provider_config_status == "ready" and auth_status == "ready" and handshake_status != "failed")
+    auth_probe_status = str((handshake or {}).get("auth_probe_status") or "unknown").strip().lower()
+    ready = bool(
+        provider
+        and provider_config_status == "ready"
+        and auth_status == "ready"
+        and handshake_status != "failed"
+        and auth_probe_status != "failed"
+    )
     if not provider:
         reason = "Provider is not configured."
     elif provider_config_status != "ready":
@@ -398,6 +410,8 @@ def model_runtime_status(model: dict) -> dict:
         reason = "No auth env vars configured for this provider."
     elif handshake_status == "failed":
         reason = (handshake or {}).get("reason") or "Provider handshake failed."
+    elif auth_probe_status == "failed":
+        reason = (handshake or {}).get("auth_probe_reason") or "Provider API auth probe failed."
     else:
         reason = None
     return {
@@ -415,6 +429,12 @@ def model_runtime_status(model: dict) -> dict:
         "handshake_latency_ms": (handshake or {}).get("latency_ms"),
         "handshake_target_url": (handshake or {}).get("target_url"),
         "handshake_reason": (handshake or {}).get("reason"),
+        "auth_probe_status": auth_probe_status,
+        "auth_probe_checked_at": (handshake or {}).get("auth_probe_checked_at"),
+        "auth_probe_http_status": (handshake or {}).get("auth_probe_http_status"),
+        "auth_probe_latency_ms": (handshake or {}).get("auth_probe_latency_ms"),
+        "auth_probe_target_url": (handshake or {}).get("auth_probe_target_url"),
+        "auth_probe_reason": (handshake or {}).get("auth_probe_reason"),
         "reason": reason,
     }
 
@@ -423,6 +443,110 @@ def _save_model_handshake(root: Path | None, model_id: str, result: dict) -> Non
     items = load_model_handshakes(root)
     items[str(model_id).strip()] = result
     save_model_handshakes(root, items)
+
+
+def _run_auth_probe(model: dict, runtime: dict, timeout_seconds: float) -> dict:
+    provider = str(model.get("provider") or "").strip().lower()
+    path = PROVIDER_AUTH_PROBE_PATHS.get(provider)
+    if not path:
+        return {
+            "status": "skipped",
+            "target_url": None,
+            "checked_at": now_iso(),
+            "http_status": None,
+            "latency_ms": None,
+            "reason": "Provider auth probe is not supported for this provider yet.",
+        }
+    if runtime.get("auth_status") != "ready":
+        return {
+            "status": "skipped",
+            "target_url": None,
+            "checked_at": now_iso(),
+            "http_status": None,
+            "latency_ms": None,
+            "reason": "Auth env vars are not ready for provider auth probe.",
+        }
+    base_url = str(runtime.get("endpoint") or "").rstrip("/")
+    target_url = f"{base_url}{path}"
+    api_key = ""
+    for name in runtime.get("present_auth_env_vars") or []:
+        value = str(os.environ.get(name) or "").strip()
+        if value:
+            api_key = value
+            break
+    if not api_key:
+        return {
+            "status": "skipped",
+            "target_url": target_url,
+            "checked_at": now_iso(),
+            "http_status": None,
+            "latency_ms": None,
+            "reason": "Provider auth env var is empty.",
+        }
+    headers = _auth_probe_headers(provider, api_key)
+    return _run_probe_request(
+        target_url,
+        timeout_seconds=timeout_seconds,
+        headers=headers,
+        ok_http_status=lambda code: 200 <= code < 300,
+        failure_reason=lambda code: _auth_probe_failure_reason(provider, code),
+    )
+
+
+def _auth_probe_headers(provider: str, api_key: str) -> dict[str, str]:
+    headers = {
+        "User-Agent": "AIOS/auth-probe",
+        "Accept": "application/json, text/plain, */*",
+    }
+    if provider == "anthropic":
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+        return headers
+    headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
+def _auth_probe_failure_reason(provider: str, status_code: int) -> str:
+    if status_code in (401, 403):
+        return f"Provider auth probe rejected credentials with HTTP {status_code}."
+    return f"Provider auth probe returned HTTP {status_code}."
+
+
+def _run_probe_request(
+    target_url: str,
+    *,
+    timeout_seconds: float,
+    headers: dict[str, str],
+    ok_http_status,
+    failure_reason,
+) -> dict:
+    started = time.perf_counter()
+    request = Request(
+        target_url,
+        headers=headers,
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            http_status = response.status
+            status = "ok" if ok_http_status(http_status) else "failed"
+            reason = None if status == "ok" else failure_reason(http_status)
+    except HTTPError as exc:
+        http_status = exc.code
+        status = "ok" if ok_http_status(exc.code) else "failed"
+        reason = None if status == "ok" else failure_reason(exc.code)
+    except URLError as exc:
+        http_status = None
+        status = "failed"
+        reason = str(exc.reason or exc)
+    return {
+        "status": status,
+        "target_url": target_url,
+        "checked_at": now_iso(),
+        "http_status": http_status,
+        "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        "reason": reason,
+    }
 
 
 def _clean_model_id(model_id: str) -> str:

@@ -63,6 +63,11 @@ def run_status(root: Path, args: argparse.Namespace) -> None:
         f"{models['provider_handshake_ready_count']} ok / "
         f"{models['provider_handshake_failed_count']} failed"
     )
+    print(
+        "Provider API: "
+        f"{models['provider_api_verified_count']} verified / "
+        f"{models['provider_api_failed_count']} failed"
+    )
     if file_index:
         print(f"Files indexed: {file_index.get('summary', {}).get('file_count', 0)}")
     else:

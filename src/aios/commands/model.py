@@ -53,6 +53,10 @@ def run_model(root, args: argparse.Namespace) -> None:
             print(f"  handshake_http_status: {runtime.get('handshake_http_status') if runtime.get('handshake_http_status') is not None else '-'}")
             print(f"  handshake_checked_at: {runtime.get('handshake_checked_at') or '-'}")
             print(f"  handshake_target_url: {runtime.get('handshake_target_url') or '-'}")
+            print(f"  auth_probe_status: {runtime.get('auth_probe_status') or '-'}")
+            print(f"  auth_probe_http_status: {runtime.get('auth_probe_http_status') if runtime.get('auth_probe_http_status') is not None else '-'}")
+            print(f"  auth_probe_checked_at: {runtime.get('auth_probe_checked_at') or '-'}")
+            print(f"  auth_probe_target_url: {runtime.get('auth_probe_target_url') or '-'}")
             print(f"  reason: {runtime.get('reason') or '-'}")
         return
 
@@ -66,5 +70,11 @@ def run_model(root, args: argparse.Namespace) -> None:
                 f"latency_ms={result.get('latency_ms') if result.get('latency_ms') is not None else '-'}"
             )
             print(f"  checked_at: {result.get('checked_at') or '-'}")
+            print(
+                "  auth_probe: "
+                f"{result.get('auth_probe_status') or '-'} "
+                f"http={result.get('auth_probe_http_status') if result.get('auth_probe_http_status') is not None else '-'} "
+                f"url={result.get('auth_probe_target_url') or '-'}"
+            )
             print(f"  reason: {result.get('reason') or '-'}")
         return

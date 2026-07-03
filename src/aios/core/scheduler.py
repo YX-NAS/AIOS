@@ -5,6 +5,7 @@ from pathlib import Path
 from aios.core.ccswitch import with_bridge_runtime_signal
 from aios.core.context_builder import inspect_context_pack
 from aios.core.executions import latest_execution_for_task
+from aios.core.models import get_model, model_runtime_status
 from aios.core.runtime_policy import budget_guard_for_task, load_runtime_policy
 from aios.core.tasks import get_task, load_tasks
 
@@ -69,6 +70,7 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         pack_quality = "warning" if severe_warnings else "ok"
     except Exception:  # noqa: BLE001
         warnings = []
+    model_block = _task_model_block_reason(task)
 
     if task["status"] == "done":
         scheduler_state = "done"
@@ -106,6 +108,10 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         scheduler_state = "blocked"
         next_action = "wait_dependencies"
         reason = f"等待依赖任务完成：{', '.join(unmet_dependencies)}"
+    elif model_block:
+        scheduler_state = "blocked"
+        next_action = model_block["next_action"]
+        reason = model_block["reason"]
     elif pack_quality == "warning":
         scheduler_state = "blocked"
         next_action = "fix_pack"
@@ -141,3 +147,42 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         "bridge_confirmation_status": bridge_confirmation_status or None,
         "bridge_resume_signal_status": execution.get("ccswitch_bridge_resume_signal_status") if execution else None,
     }
+
+
+def _task_model_block_reason(task: dict) -> dict | None:
+    model_id = str(task.get("recommended_model") or "").strip()
+    if not model_id:
+        return None
+    model = get_model(None, model_id)
+    if not model:
+        return {
+            "next_action": "fix_model_routing",
+            "reason": f"推荐模型不存在于全局模型库：{model_id}",
+        }
+    runtime = model_runtime_status(model)
+    if runtime.get("provider_config_status") != "ready":
+        return {
+            "next_action": "fix_provider_config",
+            "reason": f"推荐模型 {model_id} 缺少 provider 配置。",
+        }
+    if runtime.get("auth_status") == "missing_env":
+        return {
+            "next_action": "fix_provider_auth_env",
+            "reason": runtime.get("reason") or f"推荐模型 {model_id} 缺少鉴权环境变量。",
+        }
+    if runtime.get("auth_status") == "not_configured":
+        return {
+            "next_action": "fix_provider_auth_env",
+            "reason": runtime.get("reason") or f"推荐模型 {model_id} 未配置鉴权环境变量。",
+        }
+    if runtime.get("handshake_status") == "failed":
+        return {
+            "next_action": "probe_provider",
+            "reason": runtime.get("reason") or f"推荐模型 {model_id} 最近一次 provider 握手失败。",
+        }
+    if runtime.get("auth_probe_status") == "failed":
+        return {
+            "next_action": "fix_provider_auth",
+            "reason": runtime.get("reason") or f"推荐模型 {model_id} 的 provider API 权限验证失败。",
+        }
+    return None

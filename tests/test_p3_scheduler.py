@@ -9,10 +9,11 @@ from aios.core.scheduler import scheduler_summary
 from aios.core.runtime_policy import save_runtime_policy
 from aios.core.webapp import start_web_server
 from aios.main import main
-from aios.core.models import create_model
+from aios.core.models import create_model, save_model_handshakes
 
 
-def test_scheduler_summary_tracks_ready_blocked_and_review_pending(tmp_path: Path) -> None:
+def test_scheduler_summary_tracks_ready_blocked_and_review_pending(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
     (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
@@ -149,7 +150,8 @@ def test_scheduler_api_is_visible_in_web_ui(tmp_path: Path) -> None:
         handle.close()
 
 
-def test_scheduler_blocks_ready_task_when_budget_policy_is_exceeded(tmp_path: Path) -> None:
+def test_scheduler_blocks_ready_task_when_budget_policy_is_exceeded(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
     (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
@@ -174,8 +176,47 @@ def test_scheduler_blocks_ready_task_when_budget_policy_is_exceeded(tmp_path: Pa
     assert "预算" in item["reason"]
 
 
+def test_scheduler_blocks_task_when_provider_auth_probe_failed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "bad-openai-key")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "scan"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    save_model_handshakes(
+        None,
+        {
+            task["recommended_model"]: {
+                "model_id": task["recommended_model"],
+                "status": "ok",
+                "target_url": "https://api.openai.com/v1",
+                "checked_at": "2026-07-03T12:00:00",
+                "http_status": 401,
+                "latency_ms": 10.0,
+                "reason": None,
+                "auth_probe_status": "failed",
+                "auth_probe_checked_at": "2026-07-03T12:00:01",
+                "auth_probe_http_status": 401,
+                "auth_probe_latency_ms": 12.0,
+                "auth_probe_target_url": "https://api.openai.com/v1/models",
+                "auth_probe_reason": "Provider auth probe rejected credentials with HTTP 401.",
+            }
+        },
+    )
+
+    summary = scheduler_summary(tmp_path)
+    item = summary["items"][0]
+    assert item["scheduler_state"] == "blocked"
+    assert item["next_action"] == "fix_provider_auth"
+    assert "HTTP 401" in item["reason"]
+
+
 def test_scheduler_uses_cheapest_first_strategy_for_ready_tasks(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
     (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")

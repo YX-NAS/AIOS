@@ -616,6 +616,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
             tasks = load_tasks_safe(self.project_root) if initialized else []
             file_index = read_json(aios_dir / "file-index.json", {}) if initialized else {}
             summary = file_index.get("summary", {})
+            models = model_summary()
             return {
                 "initialized": initialized,
                 "root": str(self.project_root),
@@ -628,10 +629,12 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "frameworks": summary.get("frameworks", []),
                 "packs": list_packs(self.project_root) if initialized else [],
                 "handoffs": list_handoffs(self.project_root) if initialized else [],
-                "enabled_model_count": model_summary()["enabled_model_count"],
-                "provider_ready_count": model_summary()["provider_ready_count"],
-                "provider_handshake_ready_count": model_summary()["provider_handshake_ready_count"],
-                "provider_handshake_failed_count": model_summary()["provider_handshake_failed_count"],
+                "enabled_model_count": models["enabled_model_count"],
+                "provider_ready_count": models["provider_ready_count"],
+                "provider_handshake_ready_count": models["provider_handshake_ready_count"],
+                "provider_handshake_failed_count": models["provider_handshake_failed_count"],
+                "provider_api_verified_count": models["provider_api_verified_count"],
+                "provider_api_failed_count": models["provider_api_failed_count"],
                 "enabled_executor_count": executor_summary()["enabled_executor_count"],
                 "available_executor_count": executor_summary()["available_executor_count"],
                 "runtime_policy": runtime_policy_summary(self.project_root) if initialized else runtime_policy_empty(),

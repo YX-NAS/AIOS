@@ -284,7 +284,7 @@ aios --root /path/to/project task draft delete DRAFT-20260702-001
 
 所以它适合做项目管理和调度参考，不等于 provider 账单原值。
 
-### 第 4.2.1 步：探测 Provider 可达性
+### 第 4.2.1 步：探测 Provider 可达性与 API 权限
 
 当你已经填好：
 
@@ -302,8 +302,9 @@ aios model probe gpt-5.5
 
 或在 launcher 的全局模型库表格里，点击对应模型行右侧的 `探测`。
 
-探测结果会写入运行时状态：
+探测结果会写入运行时状态。现在会同时看到两层结果：
 
+1. 基础握手
 - `ok`
 - `failed`
 - `unknown`
@@ -314,7 +315,20 @@ aios model probe gpt-5.5
 - `failed`：连接失败、DNS 失败、连接被拒绝、或返回 5xx
 - `unknown`：还没有主动探测过
 
-这一步验证的是“服务是否在线可达”，不是“你的账号权限一定正确”。
+2. API 权限验证
+- `ok`
+- `failed`
+- `skipped`
+- `unknown`
+
+判断逻辑：
+
+- `ok`：带鉴权头访问 provider 的公开列表接口成功
+- `failed`：provider 明确拒绝该密钥，例如 401 / 403
+- `skipped`：当前 provider 暂未支持深度验证，或本机鉴权变量还没配齐
+- `unknown`：还没有主动探测过
+
+现在 `aios model probe` 不再只回答“能不能连上”，还会进一步回答“这组密钥能不能真的访问 provider API”。
 
 ### 第 4.3 步：配置项目级预算策略
 
@@ -704,10 +718,14 @@ aios model doctor gpt-5.5
 - endpoint
 - config_url
 - auth_status
+- auth_probe_status
 - 缺少哪些环境变量
 - 当前阻塞原因
 
-这一步的目的，是避免出现“执行器能跑，但模型 provider 根本没配好”的空转。
+这一步的目的，是避免出现下面两种空转：
+
+- 执行器能跑，但模型 provider 根本没配好
+- provider 地址能通，但密钥没有真正权限调用 API
 
 ### 第 7.10 步：一键桥接到 `ccswitch` 和终端
 

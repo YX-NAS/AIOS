@@ -1125,6 +1125,7 @@ def test_run_executor_cli_auto_extracts_session_reference(tmp_path: Path, monkey
 
 def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
     (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
@@ -1234,6 +1235,7 @@ def test_run_auto_cli_can_use_cheapest_first_strategy(tmp_path: Path, monkeypatc
 
 def test_run_auto_cli_reports_unavailable_executor_pool(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setattr(executors_core.shutil, "which", lambda binary: None)
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
@@ -1866,6 +1868,7 @@ def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path:
 
 def test_run_dispatch_api_can_retry_once_with_fallback_after_verification_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     create_executor(
         None,
         "verify-retry-cli",
@@ -2137,7 +2140,8 @@ def test_model_probe_cli_records_provider_handshake(tmp_path: Path, monkeypatch,
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
     class FakeResponse:
-        status = 401
+        def __init__(self, status: int):
+            self.status = status
 
         def __enter__(self):
             return self
@@ -2145,16 +2149,59 @@ def test_model_probe_cli_records_provider_handshake(tmp_path: Path, monkeypatch,
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr(models_core, "urlopen", lambda request, timeout=3.0: FakeResponse())
+    def fake_urlopen(request, timeout=3.0):
+        if request.full_url.endswith("/models"):
+            assert request.headers.get("Authorization") == "Bearer test-openai-key"
+            return FakeResponse(200)
+        return FakeResponse(401)
+
+    monkeypatch.setattr(models_core, "urlopen", fake_urlopen)
 
     assert main(["model", "probe", "gpt-5.5"]) == 0
     output = capsys.readouterr().out
     assert "gpt-5.5: ok" in output
+    assert "auth_probe: ok" in output
 
     assert main(["model", "doctor", "gpt-5.5"]) == 0
     output = capsys.readouterr().out
     assert "handshake_status: ok" in output
     assert "handshake_http_status: 401" in output
+    assert "auth_probe_status: ok" in output
+    assert "auth_probe_http_status: 200" in output
+
+
+def test_model_probe_cli_marks_failed_when_provider_auth_probe_is_rejected(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "bad-openai-key")
+
+    class FakeResponse:
+        def __init__(self, status: int):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(request, timeout=3.0):
+        if request.full_url.endswith("/models"):
+            raise models_core.HTTPError(request.full_url, 401, "Unauthorized", hdrs=None, fp=None)
+        return FakeResponse(401)
+
+    monkeypatch.setattr(models_core, "urlopen", fake_urlopen)
+
+    assert main(["model", "probe", "gpt-5.5"]) == 0
+    output = capsys.readouterr().out
+    assert "gpt-5.5: failed" in output
+    assert "auth_probe: failed" in output
+
+    assert main(["model", "doctor", "gpt-5.5"]) == 0
+    output = capsys.readouterr().out
+    assert "gpt-5.5: not-ready" in output
+    assert "auth_probe_status: failed" in output
+    assert "auth_probe_http_status: 401" in output
+    assert "Provider auth probe rejected credentials with HTTP 401." in output
 
 
 def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -2166,6 +2213,7 @@ def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, caps
     output = capsys.readouterr().out
     assert "Providers:" in output
     assert "Handshake:" in output
+    assert "Provider API:" in output
     assert "ready /" in output
     assert "Usage:" in output
     assert "Policy:" in output

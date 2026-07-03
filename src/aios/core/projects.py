@@ -90,6 +90,8 @@ def project_runtime_data(root: Path) -> dict:
             "provider_ready_count": 0,
             "provider_handshake_ready_count": 0,
             "provider_handshake_failed_count": 0,
+            "provider_api_verified_count": 0,
+            "provider_api_failed_count": 0,
             "languages": [],
             "frameworks": [],
             "latest_task_title": None,
@@ -133,15 +135,18 @@ def project_runtime_data(root: Path) -> dict:
         latest_goal = goals[0] if goals else None
     schedule = scheduler_summary(root)
     policy = runtime_policy_summary(root)
+    models = model_summary(root)
     return {
         "task_count": len(tasks),
         "open_tasks": len([task for task in tasks if task["status"] != "done"]),
         "done_tasks": len([task for task in tasks if task["status"] == "done"]),
         "file_count": file_summary.get("file_count", 0),
-        "enabled_model_count": model_summary(root)["enabled_model_count"],
-        "provider_ready_count": model_summary(root)["provider_ready_count"],
-        "provider_handshake_ready_count": model_summary(root)["provider_handshake_ready_count"],
-        "provider_handshake_failed_count": model_summary(root)["provider_handshake_failed_count"],
+        "enabled_model_count": models["enabled_model_count"],
+        "provider_ready_count": models["provider_ready_count"],
+        "provider_handshake_ready_count": models["provider_handshake_ready_count"],
+        "provider_handshake_failed_count": models["provider_handshake_failed_count"],
+        "provider_api_verified_count": models["provider_api_verified_count"],
+        "provider_api_failed_count": models["provider_api_failed_count"],
         "available_executor_count": executor_summary(root)["available_executor_count"],
         "languages": file_summary.get("languages", []),
         "frameworks": file_summary.get("frameworks", []),

@@ -124,7 +124,7 @@ function renderProjects() {
             <div class="small-note">最近执行状态：${project.latest_execution_status || "-"} | 最近执行更新时间：${project.last_execution_updated_at || "-"}</div>
             <div class="small-note">累计 Token：${project.total_token_estimate || 0} | 平均执行时长：${formatDuration(project.average_duration_seconds)} | 最近执行时长：${formatDuration(project.latest_execution_duration_seconds)}</div>
             <div class="small-note">待复核：${project.review_pending_count || 0} | 执行失败：${project.failed_count || 0} | 下一步：${project.scheduler_next_action || "-"}</div>
-            <div class="small-note">Provider 握手：${project.provider_handshake_ready_count || 0} 正常 / ${project.provider_handshake_failed_count || 0} 失败</div>
+            <div class="small-note">Provider 握手：${project.provider_handshake_ready_count || 0} 正常 / ${project.provider_handshake_failed_count || 0} 失败 | API 权限：${project.provider_api_verified_count || 0} 通过 / ${project.provider_api_failed_count || 0} 失败</div>
             <div class="small-note">调度策略：${project.runtime_policy_dispatch_strategy || "default"} | 剩余预算：${formatCost(project.remaining_total_budget, project.cost_currency)} | 单次上限：${formatCost(project.runtime_policy_max_single_execution_cost, project.cost_currency)}</div>
             <div class="small-note">下一条任务：${project.scheduler_next_task_title || "-"}</div>
           </div>
@@ -344,6 +344,14 @@ function renderRuntimeBadge(runtime) {
       : data.handshake_status === "failed"
         ? `握手失败${data.handshake_http_status != null ? ` (${data.handshake_http_status})` : ""}`
         : "未探测";
+  const authProbeLabel =
+    data.auth_probe_status === "ok"
+      ? `权限验证通过${data.auth_probe_http_status != null ? ` (${data.auth_probe_http_status})` : ""}`
+      : data.auth_probe_status === "failed"
+        ? `权限验证失败${data.auth_probe_http_status != null ? ` (${data.auth_probe_http_status})` : ""}`
+        : data.auth_probe_status === "skipped"
+          ? "权限验证跳过"
+          : "未验权限";
   const reason = data.reason || "可用于执行";
   return `
     <div class="runtime-state ${ready ? "ready" : "blocked"}">
@@ -351,6 +359,7 @@ function renderRuntimeBadge(runtime) {
       <div class="runtime-detail">${providerLabel}</div>
       <div class="runtime-detail">${authLabel}</div>
       <div class="runtime-detail">${handshakeLabel}</div>
+      <div class="runtime-detail">${authProbeLabel}</div>
       <div class="runtime-reason">${reason}</div>
     </div>
   `;
