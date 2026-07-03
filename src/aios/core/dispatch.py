@@ -50,11 +50,13 @@ def auto_progress_next_step(
             pr_base_branch=pr_base_branch,
         )
         if not finish_result["finished"] and auto_recover_failures:
+            policy = load_runtime_policy(root)
             recovery_result = run_automatic_recovery_chain(
                 root,
                 task_id=before["next_task_id"],
                 executor_id=executor_id or (finish_result.get("execution") or {}).get("executor_id"),
-                max_attempts=int(load_runtime_policy(root).get("max_auto_recovery_attempts") or 0),
+                max_attempts=int(policy.get("max_auto_recovery_attempts") or 0),
+                policy=policy,
                 note=note,
                 auto_finish=auto_finish,
                 summary=summary,
@@ -191,11 +193,13 @@ def auto_progress_next_step(
         pr_base_branch=pr_base_branch,
     )
     if not result.get("auto_finished") and auto_recover_failures:
+        policy = load_runtime_policy(root)
         recovery_result = run_automatic_recovery_chain(
             root,
             task_id=candidate["task_id"],
             executor_id=selected_executor_id,
-            max_attempts=int(load_runtime_policy(root).get("max_auto_recovery_attempts") or 0),
+            max_attempts=int(policy.get("max_auto_recovery_attempts") or 0),
+            policy=policy,
             note=note,
             auto_finish=auto_finish,
             summary=summary,

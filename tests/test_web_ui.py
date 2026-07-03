@@ -67,6 +67,8 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert status_code == 200
         assert policy_payload["policy"]["dispatch_strategy"] == "default"
         assert policy_payload["policy"]["max_auto_recovery_attempts"] == 2
+        assert policy_payload["policy"]["auto_recovery_cooldown_seconds"] == 0
+        assert policy_payload["policy"]["auto_recovery_limits"]["provider_unreachable"] == 2
 
         status_code, policy_update_payload = request_json(
             handle.url,
@@ -76,6 +78,13 @@ def test_web_ui_flow(tmp_path: Path) -> None:
                 "max_total_estimated_cost": 12.5,
                 "max_single_execution_cost": 2.5,
                 "max_auto_recovery_attempts": 3,
+                "auto_recovery_cooldown_seconds": 30,
+                "auto_recovery_limits": {
+                    "verification_failed": 2,
+                    "provider_unreachable": 1,
+                    "executor_timeout": 1,
+                    "executor_nonzero_exit": 1,
+                },
                 "block_on_unpriced_model": True,
                 "dispatch_strategy": "cheapest_first",
                 "cost_currency": "USD",
@@ -85,6 +94,8 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert policy_update_payload["policy"]["dispatch_strategy"] == "cheapest_first"
         assert policy_update_payload["policy"]["max_total_estimated_cost"] == 12.5
         assert policy_update_payload["policy"]["max_auto_recovery_attempts"] == 3
+        assert policy_update_payload["policy"]["auto_recovery_cooldown_seconds"] == 30
+        assert policy_update_payload["policy"]["auto_recovery_limits"]["provider_unreachable"] == 1
         assert policy_update_payload["policy"]["block_on_unpriced_model"] is True
 
         status_code, route_payload = request_json(handle.url, f"/api/route/{task_id}")

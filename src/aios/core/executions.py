@@ -681,6 +681,7 @@ def run_automatic_recovery_chain(
     executor_id: str,
     *,
     max_attempts: int,
+    policy: dict | None = None,
     note: str | None = None,
     auto_finish: bool = False,
     summary: str | None = None,
@@ -697,13 +698,28 @@ def run_automatic_recovery_chain(
 ) -> dict | None:
     task = get_task(root, task_id)
     attempts_used = int(task.get("auto_recovery_count") or 0)
-    if attempts_used >= max_attempts:
+    latest = latest_execution_for_task(root, task_id)
+    allowed_attempts, blocked_reason, next_retry_at = _automatic_recovery_guard(task, latest, policy, max_attempts)
+    if blocked_reason:
+        if latest:
+            updated = update_execution(
+                root,
+                latest["execution_id"],
+                {
+                    "recovery_blocked_reason": blocked_reason,
+                    "recovery_next_retry_at": next_retry_at,
+                    "updated_at": now_iso(),
+                },
+            )
+            latest = updated
+        return None
+    if attempts_used >= allowed_attempts:
         return None
 
     chain: list[dict] = []
     last_result: dict | None = None
 
-    while attempts_used < max_attempts:
+    while attempts_used < allowed_attempts:
         result = attempt_automatic_recovery(
             root,
             task_id,
@@ -748,12 +764,26 @@ def run_automatic_recovery_chain(
             break
         if latest.get("status") not in {"failed", "review_pending"}:
             break
+        allowed_attempts, blocked_reason, next_retry_at = _automatic_recovery_guard(task, latest, policy, max_attempts)
+        if blocked_reason:
+            updated = update_execution(
+                root,
+                latest["execution_id"],
+                {
+                    "recovery_blocked_reason": blocked_reason,
+                    "recovery_next_retry_at": next_retry_at,
+                    "updated_at": now_iso(),
+                },
+            )
+            if last_result is not None:
+                last_result["execution"] = updated
+            break
 
     if not last_result:
         return None
     last_result["recovery_chain"] = chain
     last_result["auto_recovery_attempts_used"] = attempts_used
-    last_result["auto_recovery_limit_reached"] = attempts_used >= max_attempts
+    last_result["auto_recovery_limit_reached"] = attempts_used >= allowed_attempts
     return last_result
 
 
@@ -1120,6 +1150,37 @@ def requeue_failed_execution_for_recovery(root: Path, task_id: str) -> dict | No
         "recovery_strategy": "rerun_same_model",
         "recovery_trigger": category,
     }
+
+
+def _automatic_recovery_guard(task: dict, execution: dict | None, policy: dict | None, max_attempts: int) -> tuple[int, str | None, str | None]:
+    category = str((execution or {}).get("failure_category") or "verification_failed").strip()
+    limits = dict((policy or {}).get("auto_recovery_limits") or {})
+    category_limit = limits.get(category)
+    if category_limit is None:
+        category_limit = max_attempts
+    category_limit = int(category_limit)
+    allowed_attempts = min(max_attempts, category_limit)
+    attempts_used = int(task.get("auto_recovery_count") or 0)
+    if attempts_used >= allowed_attempts:
+        return allowed_attempts, f"自动恢复已达到当前失败类别上限：{category} -> {allowed_attempts} 次。", None
+
+    cooldown_seconds = int((policy or {}).get("auto_recovery_cooldown_seconds") or 0)
+    if cooldown_seconds <= 0:
+        return allowed_attempts, None, None
+    last_recovery_at = str(task.get("last_recovery_at") or "").strip()
+    if not last_recovery_at:
+        return allowed_attempts, None, None
+    try:
+        last_dt = datetime.fromisoformat(last_recovery_at)
+    except ValueError:
+        return allowed_attempts, None, None
+    now_dt = datetime.fromisoformat(now_iso())
+    elapsed = (now_dt - last_dt).total_seconds()
+    if elapsed >= cooldown_seconds:
+        return allowed_attempts, None, None
+    next_retry_at = last_dt.timestamp() + cooldown_seconds
+    next_retry_iso = datetime.fromtimestamp(next_retry_at).isoformat(timespec="seconds")
+    return allowed_attempts, f"自动恢复冷却中，需等待到 {next_retry_iso}。", next_retry_iso
 
 
 def execution_summary(root: Path) -> dict:

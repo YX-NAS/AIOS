@@ -123,6 +123,26 @@
                     <input name="max_auto_recovery_attempts" type="number" min="0" step="1" placeholder="默认 2" />
                   </label>
                   <label>
+                    <span>自动恢复冷却秒数</span>
+                    <input name="auto_recovery_cooldown_seconds" type="number" min="0" step="1" placeholder="默认 0" />
+                  </label>
+                  <label>
+                    <span>验证失败恢复上限</span>
+                    <input name="limit_verification_failed" type="number" min="0" step="1" placeholder="默认 1" />
+                  </label>
+                  <label>
+                    <span>网络失败恢复上限</span>
+                    <input name="limit_provider_unreachable" type="number" min="0" step="1" placeholder="默认 2" />
+                  </label>
+                  <label>
+                    <span>超时恢复上限</span>
+                    <input name="limit_executor_timeout" type="number" min="0" step="1" placeholder="默认 1" />
+                  </label>
+                  <label>
+                    <span>非零退出恢复上限</span>
+                    <input name="limit_executor_nonzero_exit" type="number" min="0" step="1" placeholder="默认 1" />
+                  </label>
+                  <label>
                     <span>调度策略</span>
                     <select name="dispatch_strategy">
                       <option value="default">default</option>

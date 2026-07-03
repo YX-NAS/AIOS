@@ -14,6 +14,14 @@ DEFAULT_RUNTIME_POLICY = {
     "max_total_estimated_cost": None,
     "max_single_execution_cost": None,
     "max_auto_recovery_attempts": 2,
+    "auto_recovery_cooldown_seconds": 0,
+    "auto_recovery_limits": {
+        "verification_failed": 1,
+        "provider_unreachable": 2,
+        "executor_timeout": 1,
+        "executor_nonzero_exit": 1,
+        "provider_auth_failed": 0,
+    },
     "block_on_unpriced_model": False,
     "dispatch_strategy": "default",
     "cost_currency": "USD",
@@ -46,6 +54,8 @@ def update_runtime_policy(
     max_total_estimated_cost: float | None | object = UNSET,
     max_single_execution_cost: float | None | object = UNSET,
     max_auto_recovery_attempts: int | None | object = UNSET,
+    auto_recovery_cooldown_seconds: int | None | object = UNSET,
+    auto_recovery_limits: dict | None | object = UNSET,
     block_on_unpriced_model: bool | None = None,
     dispatch_strategy: str | None = None,
     cost_currency: str | None = None,
@@ -57,6 +67,10 @@ def update_runtime_policy(
         current["max_single_execution_cost"] = _clean_optional_number(max_single_execution_cost)
     if max_auto_recovery_attempts is not UNSET:
         current["max_auto_recovery_attempts"] = _clean_optional_int(max_auto_recovery_attempts, minimum=0)
+    if auto_recovery_cooldown_seconds is not UNSET:
+        current["auto_recovery_cooldown_seconds"] = _clean_optional_int(auto_recovery_cooldown_seconds, minimum=0)
+    if auto_recovery_limits is not UNSET:
+        current["auto_recovery_limits"] = _normalize_recovery_limits(auto_recovery_limits)
     if block_on_unpriced_model is not None:
         current["block_on_unpriced_model"] = bool(block_on_unpriced_model)
     if dispatch_strategy is not None:
@@ -79,6 +93,8 @@ def normalize_runtime_policy(policy: dict | None) -> dict:
         "max_total_estimated_cost": _clean_optional_number(payload.get("max_total_estimated_cost")),
         "max_single_execution_cost": _clean_optional_number(payload.get("max_single_execution_cost")),
         "max_auto_recovery_attempts": _clean_optional_int(payload.get("max_auto_recovery_attempts"), minimum=0) if payload.get("max_auto_recovery_attempts") not in (None, "") else DEFAULT_RUNTIME_POLICY["max_auto_recovery_attempts"],
+        "auto_recovery_cooldown_seconds": _clean_optional_int(payload.get("auto_recovery_cooldown_seconds"), minimum=0) if payload.get("auto_recovery_cooldown_seconds") not in (None, "") else DEFAULT_RUNTIME_POLICY["auto_recovery_cooldown_seconds"],
+        "auto_recovery_limits": _normalize_recovery_limits(payload.get("auto_recovery_limits")),
         "block_on_unpriced_model": bool(payload.get("block_on_unpriced_model", False)),
         "dispatch_strategy": strategy,
         "cost_currency": str(payload.get("cost_currency") or "USD").strip().upper() or "USD",
@@ -165,3 +181,16 @@ def _clean_optional_int(value: object, *, minimum: int = 0) -> int | None:
     if number < minimum:
         raise ValueError(f"Integer policy values must be >= {minimum}.")
     return number
+
+
+def _normalize_recovery_limits(value: object) -> dict[str, int]:
+    defaults = dict(DEFAULT_RUNTIME_POLICY["auto_recovery_limits"])
+    if not isinstance(value, dict):
+        return defaults
+    normalized = dict(defaults)
+    for key, raw in value.items():
+        if key not in defaults:
+            continue
+        cleaned = _clean_optional_int(raw, minimum=0)
+        normalized[key] = cleaned if cleaned is not None else defaults[key]
+    return normalized

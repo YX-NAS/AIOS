@@ -457,11 +457,13 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         (payload.get("pr_base_branch") or "main").strip() or "main",
                     )
                     if not result.get("auto_finished") and bool(payload.get("auto_recover_failures") or payload.get("retry_on_verify_fail")):
+                        policy = load_runtime_policy(self.project_root)
                         recovered = run_automatic_recovery_chain(
                             self.project_root,
                             payload["task_id"],
                             payload["executor_id"],
-                            max_attempts=int(load_runtime_policy(self.project_root).get("max_auto_recovery_attempts") or 0),
+                            max_attempts=int(policy.get("max_auto_recovery_attempts") or 0),
+                            policy=policy,
                             note=(payload.get("note") or "").strip() or None,
                             auto_finish=bool(payload.get("auto_finish")),
                             summary=(payload.get("summary") or "").strip() or None,
@@ -539,6 +541,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "max_total_estimated_cost": payload.get("max_total_estimated_cost"),
                             "max_single_execution_cost": payload.get("max_single_execution_cost"),
                             "max_auto_recovery_attempts": payload.get("max_auto_recovery_attempts"),
+                            "auto_recovery_cooldown_seconds": payload.get("auto_recovery_cooldown_seconds"),
+                            "auto_recovery_limits": payload.get("auto_recovery_limits"),
                             "block_on_unpriced_model": bool(payload.get("block_on_unpriced_model")),
                             "dispatch_strategy": (payload.get("dispatch_strategy") or "default").strip() or "default",
                             "cost_currency": (payload.get("cost_currency") or "USD").strip() or "USD",

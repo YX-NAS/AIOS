@@ -170,6 +170,8 @@ function renderRuntimePolicy() {
     <div class="muted">项目总预算：${policy.max_total_estimated_cost != null ? `${policy.max_total_estimated_cost} ${currency}` : "-"}</div>
     <div class="muted">单次执行上限：${policy.max_single_execution_cost != null ? `${policy.max_single_execution_cost} ${currency}` : "-"}</div>
     <div class="muted">自动恢复上限：${policy.max_auto_recovery_attempts != null ? `${policy.max_auto_recovery_attempts} 次` : "-"}</div>
+    <div class="muted">自动恢复冷却：${policy.auto_recovery_cooldown_seconds != null ? `${policy.auto_recovery_cooldown_seconds}s` : "-"}</div>
+    <div class="muted">分类恢复上限：验证 ${policy.auto_recovery_limits?.verification_failed ?? 1} / 网络 ${policy.auto_recovery_limits?.provider_unreachable ?? 2} / 超时 ${policy.auto_recovery_limits?.executor_timeout ?? 1} / 非零退出 ${policy.auto_recovery_limits?.executor_nonzero_exit ?? 1}</div>
     <div class="muted">累计已用：${policy.spent_total_estimated_cost != null ? `${policy.spent_total_estimated_cost} ${currency}` : "-"}</div>
     <div class="muted">剩余预算：${policy.remaining_total_budget != null ? `${policy.remaining_total_budget} ${currency}` : "-"}</div>
     <div class="muted">未定价阻塞：${policy.block_on_unpriced_model ? "开启" : "关闭"}</div>
@@ -177,6 +179,11 @@ function renderRuntimePolicy() {
   elements.runtimePolicyForm.querySelector('input[name="max_total_estimated_cost"]').value = policy.max_total_estimated_cost ?? "";
   elements.runtimePolicyForm.querySelector('input[name="max_single_execution_cost"]').value = policy.max_single_execution_cost ?? "";
   elements.runtimePolicyForm.querySelector('input[name="max_auto_recovery_attempts"]').value = policy.max_auto_recovery_attempts ?? 2;
+  elements.runtimePolicyForm.querySelector('input[name="auto_recovery_cooldown_seconds"]').value = policy.auto_recovery_cooldown_seconds ?? 0;
+  elements.runtimePolicyForm.querySelector('input[name="limit_verification_failed"]').value = policy.auto_recovery_limits?.verification_failed ?? 1;
+  elements.runtimePolicyForm.querySelector('input[name="limit_provider_unreachable"]').value = policy.auto_recovery_limits?.provider_unreachable ?? 2;
+  elements.runtimePolicyForm.querySelector('input[name="limit_executor_timeout"]').value = policy.auto_recovery_limits?.executor_timeout ?? 1;
+  elements.runtimePolicyForm.querySelector('input[name="limit_executor_nonzero_exit"]').value = policy.auto_recovery_limits?.executor_nonzero_exit ?? 1;
   elements.runtimePolicyForm.querySelector('select[name="dispatch_strategy"]').value = policy.dispatch_strategy || "default";
   elements.runtimePolicyForm.querySelector('input[name="block_on_unpriced_model"]').checked = Boolean(policy.block_on_unpriced_model);
   elements.runtimePolicyForm.querySelector('input[name="cost_currency"]').value = policy.cost_currency || "USD";
@@ -451,6 +458,8 @@ function renderExecution(task, execution) {
     <div class="muted">恢复触发：${execution.recovery_trigger || "-"}</div>
     <div class="muted">恢复策略：${execution.recovery_strategy || "-"}</div>
     <div class="muted">恢复尝试序号：${execution.retry_attempt || "-"}</div>
+    <div class="muted">恢复阻塞原因：${execution.recovery_blocked_reason || "-"}</div>
+    <div class="muted">下次可恢复时间：${execution.recovery_next_retry_at || "-"}</div>
     <div class="muted">Prompt Token：${execution.prompt_token_estimate || 0}</div>
     <div class="muted">输出 Token：${execution.output_token_estimate || 0}</div>
     <div class="muted">总 Token：${execution.total_token_estimate || 0}</div>
@@ -682,6 +691,13 @@ elements.runtimePolicyForm?.addEventListener("submit", async (event) => {
         max_total_estimated_cost: form.get("max_total_estimated_cost") || null,
         max_single_execution_cost: form.get("max_single_execution_cost") || null,
         max_auto_recovery_attempts: form.get("max_auto_recovery_attempts") || 0,
+        auto_recovery_cooldown_seconds: form.get("auto_recovery_cooldown_seconds") || 0,
+        auto_recovery_limits: {
+          verification_failed: form.get("limit_verification_failed") || 0,
+          provider_unreachable: form.get("limit_provider_unreachable") || 0,
+          executor_timeout: form.get("limit_executor_timeout") || 0,
+          executor_nonzero_exit: form.get("limit_executor_nonzero_exit") || 0,
+        },
         dispatch_strategy: form.get("dispatch_strategy"),
         block_on_unpriced_model: form.get("block_on_unpriced_model") === "on",
         cost_currency: form.get("cost_currency") || "USD",
@@ -690,7 +706,7 @@ elements.runtimePolicyForm?.addEventListener("submit", async (event) => {
     state.runtimePolicy = data.policy;
     renderRuntimePolicy();
     await refreshDashboard();
-    setActivity(`已更新预算策略。\n调度策略：${data.policy.dispatch_strategy}\n自动恢复上限：${data.policy.max_auto_recovery_attempts ?? "-"}\n剩余预算：${data.policy.remaining_total_budget ?? "-"} ${data.policy.cost_currency || "USD"}`);
+    setActivity(`已更新预算策略。\n调度策略：${data.policy.dispatch_strategy}\n自动恢复总上限：${data.policy.max_auto_recovery_attempts ?? "-"}\n自动恢复冷却：${data.policy.auto_recovery_cooldown_seconds ?? "-"}s\n剩余预算：${data.policy.remaining_total_budget ?? "-"} ${data.policy.cost_currency || "USD"}`);
   }, "保存预算策略失败。");
 });
 

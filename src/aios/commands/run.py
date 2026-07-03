@@ -320,11 +320,13 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             pr_base_branch=args.pr_base_branch,
         )
         if not result.get("auto_finished") and args.auto_recover_failures:
+            policy = load_runtime_policy(root)
             recovered = run_automatic_recovery_chain(
                 root,
                 task_id,
                 args.executor,
-                max_attempts=int(load_runtime_policy(root).get("max_auto_recovery_attempts") or 0),
+                max_attempts=int(policy.get("max_auto_recovery_attempts") or 0),
+                policy=policy,
                 note=args.note,
                 auto_finish=args.auto_finish,
                 summary=args.summary,

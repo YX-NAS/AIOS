@@ -2246,6 +2246,140 @@ def test_run_execute_api_stops_when_recovery_limit_is_reached(tmp_path: Path, mo
         handle.close()
 
 
+def test_run_execute_api_respects_category_specific_recovery_limit(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    recover_script = tmp_path / "recover_category_limit.py"
+    recover_script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "sys.stderr.write('connection refused\\n')",
+                "sys.exit(2)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "recover-category-limit-cli",
+        label="Recover Category Limit CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(recover_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(
+            handle.url,
+            "/api/runtime-policy",
+            method="POST",
+            payload={
+                "max_auto_recovery_attempts": 3,
+                "auto_recovery_limits": {
+                    "verification_failed": 2,
+                    "provider_unreachable": 1,
+                    "executor_timeout": 1,
+                    "executor_nonzero_exit": 1,
+                },
+            },
+        )
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task_id = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": task_id,
+                "executor_id": "recover-category-limit-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["auto_recovered"] is True
+        assert payload["execution"]["status"] == "failed"
+        assert payload["auto_recovery_attempts_used"] == 1
+        assert payload["auto_recovery_limit_reached"] is True
+        assert len(payload["recovery_chain"]) == 1
+        assert "provider_unreachable -> 1 次" in (payload["execution"]["recovery_blocked_reason"] or "")
+    finally:
+        handle.close()
+
+
+def test_run_execute_api_stops_second_recovery_during_cooldown(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    recover_script = tmp_path / "recover_with_cooldown.py"
+    recover_script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "sys.stderr.write('connection refused\\n')",
+                "sys.exit(2)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "recover-cooldown-cli",
+        label="Recover Cooldown CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(recover_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(
+            handle.url,
+            "/api/runtime-policy",
+            method="POST",
+            payload={
+                "max_auto_recovery_attempts": 3,
+                "auto_recovery_cooldown_seconds": 60,
+            },
+        )
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task_id = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": task_id,
+                "executor_id": "recover-cooldown-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["auto_recovered"] is True
+        assert payload["execution"]["status"] == "failed"
+        assert payload["auto_recovery_attempts_used"] == 1
+        assert payload["auto_recovery_limit_reached"] is False
+        assert len(payload["recovery_chain"]) == 1
+        assert "自动恢复冷却中" in (payload["execution"]["recovery_blocked_reason"] or "")
+        assert payload["execution"]["recovery_next_retry_at"]
+    finally:
+        handle.close()
+
+
 def test_run_dispatch_api_blocks_when_bridge_confirmation_is_pending(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_model(
