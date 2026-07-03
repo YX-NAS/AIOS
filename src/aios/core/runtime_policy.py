@@ -13,6 +13,7 @@ from aios.utils.text import now_iso
 DEFAULT_RUNTIME_POLICY = {
     "max_total_estimated_cost": None,
     "max_single_execution_cost": None,
+    "max_auto_recovery_attempts": 2,
     "block_on_unpriced_model": False,
     "dispatch_strategy": "default",
     "cost_currency": "USD",
@@ -44,6 +45,7 @@ def update_runtime_policy(
     *,
     max_total_estimated_cost: float | None | object = UNSET,
     max_single_execution_cost: float | None | object = UNSET,
+    max_auto_recovery_attempts: int | None | object = UNSET,
     block_on_unpriced_model: bool | None = None,
     dispatch_strategy: str | None = None,
     cost_currency: str | None = None,
@@ -53,6 +55,8 @@ def update_runtime_policy(
         current["max_total_estimated_cost"] = _clean_optional_number(max_total_estimated_cost)
     if max_single_execution_cost is not UNSET:
         current["max_single_execution_cost"] = _clean_optional_number(max_single_execution_cost)
+    if max_auto_recovery_attempts is not UNSET:
+        current["max_auto_recovery_attempts"] = _clean_optional_int(max_auto_recovery_attempts, minimum=0)
     if block_on_unpriced_model is not None:
         current["block_on_unpriced_model"] = bool(block_on_unpriced_model)
     if dispatch_strategy is not None:
@@ -74,6 +78,7 @@ def normalize_runtime_policy(policy: dict | None) -> dict:
     return {
         "max_total_estimated_cost": _clean_optional_number(payload.get("max_total_estimated_cost")),
         "max_single_execution_cost": _clean_optional_number(payload.get("max_single_execution_cost")),
+        "max_auto_recovery_attempts": _clean_optional_int(payload.get("max_auto_recovery_attempts"), minimum=0) if payload.get("max_auto_recovery_attempts") not in (None, "") else DEFAULT_RUNTIME_POLICY["max_auto_recovery_attempts"],
         "block_on_unpriced_model": bool(payload.get("block_on_unpriced_model", False)),
         "dispatch_strategy": strategy,
         "cost_currency": str(payload.get("cost_currency") or "USD").strip().upper() or "USD",
@@ -151,3 +156,12 @@ def _clean_optional_number(value: object) -> float | None:
     if number < 0:
         raise ValueError("Budget values must be non-negative.")
     return round(number, 6)
+
+
+def _clean_optional_int(value: object, *, minimum: int = 0) -> int | None:
+    if value in (None, ""):
+        return None
+    number = int(value)
+    if number < minimum:
+        raise ValueError(f"Integer policy values must be >= {minimum}.")
+    return number

@@ -2114,6 +2114,138 @@ def test_run_dispatch_api_can_auto_recover_retryable_failed_execution(tmp_path: 
         handle.close()
 
 
+def test_run_execute_api_can_use_multiple_recovery_attempts_until_success(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    recover_script = tmp_path / "recover_twice.py"
+    recover_script.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "import sys",
+                "path = Path('.recover-twice-count')",
+                "count = int(path.read_text(encoding='utf-8')) if path.exists() else 0",
+                "path.write_text(str(count + 1), encoding='utf-8')",
+                "if count < 2:",
+                "    sys.stderr.write('connection refused\\n')",
+                "    sys.exit(2)",
+                "print('success on third run')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "recover-twice-cli",
+        label="Recover Twice CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(recover_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(
+            handle.url,
+            "/api/runtime-policy",
+            method="POST",
+            payload={"max_auto_recovery_attempts": 2},
+        )
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"],
+                "executor_id": "recover-twice-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["auto_recovered"] is True
+        assert payload["execution"]["status"] == "review_pending"
+        assert payload["auto_recovery_attempts_used"] == 2
+        assert len(payload["recovery_chain"]) == 2
+
+        executions = load_executions(tmp_path)
+        assert len(executions) == 3
+        assert executions[-1]["status"] == "review_pending"
+    finally:
+        handle.close()
+
+
+def test_run_execute_api_stops_when_recovery_limit_is_reached(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    recover_script = tmp_path / "recover_limit.py"
+    recover_script.write_text(
+        "\n".join(
+            [
+                "import sys",
+                "sys.stderr.write('connection refused\\n')",
+                "sys.exit(2)",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    create_executor(
+        None,
+        "recover-limit-cli",
+        label="Recover Limit CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=[str(recover_script), "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        request_json(handle.url, "/api/init", method="POST", payload={"name": "demo", "type": "web-app"})
+        request_json(
+            handle.url,
+            "/api/runtime-policy",
+            method="POST",
+            payload={"max_auto_recovery_attempts": 1},
+        )
+        request_json(handle.url, "/api/tasks", method="POST", payload={"title": "更新说明文档", "priority": "medium"})
+        task_id = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]["id"]
+
+        status_code, payload = request_json(
+            handle.url,
+            "/api/run/execute",
+            method="POST",
+            payload={
+                "task_id": task_id,
+                "executor_id": "recover-limit-cli",
+                "auto_recover_failures": True,
+            },
+        )
+        assert status_code == 201
+        assert payload["auto_recovered"] is True
+        assert payload["execution"]["status"] == "failed"
+        assert payload["auto_recovery_attempts_used"] == 1
+        assert payload["auto_recovery_limit_reached"] is True
+        assert len(payload["recovery_chain"]) == 1
+
+        executions = load_executions(tmp_path)
+        assert len(executions) == 2
+        assert executions[-1]["status"] == "failed"
+    finally:
+        handle.close()
+
+
 def test_run_dispatch_api_blocks_when_bridge_confirmation_is_pending(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     create_model(

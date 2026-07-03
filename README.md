@@ -35,6 +35,7 @@ Provider / 鉴权就绪探测方案见 [docs/P3_29_DESIGN.md](/Users/yaxun/Synol
 预算阈值与调度策略方案见 [docs/P3_31_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_31_DESIGN.md)。
 Provider API 深度权限验证方案见 [docs/P3_32_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_32_DESIGN.md)。
 差异化自动恢复策略方案见 [docs/P3_33_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_33_DESIGN.md)。
+多轮自动恢复护栏方案见 [docs/P3_34_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_34_DESIGN.md)。
 
 ## MVP 边界
 
@@ -91,6 +92,7 @@ Provider API 深度权限验证方案见 [docs/P3_32_DESIGN.md](/Users/yaxun/Syn
 - 全局模型库现在还能主动探测 provider 可达性，把“已配置”继续推进到“最近一次握手正常”
 - `aios model probe` 现在还能继续验证 provider API 权限，而不是只看网络是否可达
 - `aios run ... --auto-recover-failures` 现在还能按失败类型自动恢复一次，而不是只支持验证失败 fallback
+- 自动恢复现在还能按项目策略连续恢复多轮，并受上限控制
 - 执行记录现在还能结构化区分失败类型，并给出下一步建议动作
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供

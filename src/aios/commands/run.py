@@ -5,7 +5,6 @@ from pathlib import Path
 
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executions import (
-    attempt_automatic_recovery,
     attach_execution_session,
     auto_finish_execution,
     build_execution_resume,
@@ -14,9 +13,11 @@ from aios.core.executions import (
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
+    run_automatic_recovery_chain,
     run_executor_execution,
     run_executor_with_auto_finish,
 )
+from aios.core.runtime_policy import load_runtime_policy
 
 
 def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -109,6 +110,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Auto recovered task: {result['task']['id']} {result['task']['title']}")
             print(f"Recovery strategy: {recovery.get('recovery_strategy') or '-'}")
             print(f"Recovery trigger: {recovery.get('recovery_trigger') or result['execution'].get('failure_category') or '-'}")
+            print(f"Recovery attempts used: {result.get('auto_recovery_attempts_used') if result.get('auto_recovery_attempts_used') is not None else '-'}")
         if result.get("auto_confirmed_bridge") and not result["dispatched"]:
             print(f"Bridge auto-confirmed: {result['task']['id']} {result['task']['title']}")
             print(f"Execution: {result['execution']['execution_id']} [{result['execution']['status']}]")
@@ -318,10 +320,11 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             pr_base_branch=args.pr_base_branch,
         )
         if not result.get("auto_finished") and args.auto_recover_failures:
-            recovered = attempt_automatic_recovery(
+            recovered = run_automatic_recovery_chain(
                 root,
                 task_id,
                 args.executor,
+                max_attempts=int(load_runtime_policy(root).get("max_auto_recovery_attempts") or 0),
                 note=args.note,
                 auto_finish=args.auto_finish,
                 summary=args.summary,
@@ -361,6 +364,7 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
         elif result.get("auto_recovered"):
             print(f"Recovery strategy: {result.get('recovery', {}).get('recovery_strategy') or '-'}")
             print(f"Recovery trigger: {result.get('recovery', {}).get('recovery_trigger') or '-'}")
+            print(f"Recovery attempts used: {result.get('auto_recovery_attempts_used') if result.get('auto_recovery_attempts_used') is not None else '-'}")
         _print_git_commit(result.get("git_commit"))
         _print_git_push(result.get("git_push"))
         _print_git_pr(result.get("git_pr"))

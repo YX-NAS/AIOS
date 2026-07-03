@@ -169,12 +169,14 @@ function renderRuntimePolicy() {
     <strong>${policy.dispatch_strategy || "default"}</strong>
     <div class="muted">项目总预算：${policy.max_total_estimated_cost != null ? `${policy.max_total_estimated_cost} ${currency}` : "-"}</div>
     <div class="muted">单次执行上限：${policy.max_single_execution_cost != null ? `${policy.max_single_execution_cost} ${currency}` : "-"}</div>
+    <div class="muted">自动恢复上限：${policy.max_auto_recovery_attempts != null ? `${policy.max_auto_recovery_attempts} 次` : "-"}</div>
     <div class="muted">累计已用：${policy.spent_total_estimated_cost != null ? `${policy.spent_total_estimated_cost} ${currency}` : "-"}</div>
     <div class="muted">剩余预算：${policy.remaining_total_budget != null ? `${policy.remaining_total_budget} ${currency}` : "-"}</div>
     <div class="muted">未定价阻塞：${policy.block_on_unpriced_model ? "开启" : "关闭"}</div>
   `;
   elements.runtimePolicyForm.querySelector('input[name="max_total_estimated_cost"]').value = policy.max_total_estimated_cost ?? "";
   elements.runtimePolicyForm.querySelector('input[name="max_single_execution_cost"]').value = policy.max_single_execution_cost ?? "";
+  elements.runtimePolicyForm.querySelector('input[name="max_auto_recovery_attempts"]').value = policy.max_auto_recovery_attempts ?? 2;
   elements.runtimePolicyForm.querySelector('select[name="dispatch_strategy"]').value = policy.dispatch_strategy || "default";
   elements.runtimePolicyForm.querySelector('input[name="block_on_unpriced_model"]').checked = Boolean(policy.block_on_unpriced_model);
   elements.runtimePolicyForm.querySelector('input[name="cost_currency"]').value = policy.cost_currency || "USD";
@@ -679,6 +681,7 @@ elements.runtimePolicyForm?.addEventListener("submit", async (event) => {
       body: JSON.stringify({
         max_total_estimated_cost: form.get("max_total_estimated_cost") || null,
         max_single_execution_cost: form.get("max_single_execution_cost") || null,
+        max_auto_recovery_attempts: form.get("max_auto_recovery_attempts") || 0,
         dispatch_strategy: form.get("dispatch_strategy"),
         block_on_unpriced_model: form.get("block_on_unpriced_model") === "on",
         cost_currency: form.get("cost_currency") || "USD",
@@ -687,7 +690,7 @@ elements.runtimePolicyForm?.addEventListener("submit", async (event) => {
     state.runtimePolicy = data.policy;
     renderRuntimePolicy();
     await refreshDashboard();
-    setActivity(`已更新预算策略。\n调度策略：${data.policy.dispatch_strategy}\n剩余预算：${data.policy.remaining_total_budget ?? "-"} ${data.policy.cost_currency || "USD"}`);
+    setActivity(`已更新预算策略。\n调度策略：${data.policy.dispatch_strategy}\n自动恢复上限：${data.policy.max_auto_recovery_attempts ?? "-"}\n剩余预算：${data.policy.remaining_total_budget ?? "-"} ${data.policy.cost_currency || "USD"}`);
   }, "保存预算策略失败。");
 });
 

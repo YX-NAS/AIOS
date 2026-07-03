@@ -119,6 +119,10 @@
                     <input name="max_single_execution_cost" type="number" min="0" step="0.000001" placeholder="留空表示不限制" />
                   </label>
                   <label>
+                    <span>自动恢复次数上限</span>
+                    <input name="max_auto_recovery_attempts" type="number" min="0" step="1" placeholder="默认 2" />
+                  </label>
+                  <label>
                     <span>调度策略</span>
                     <select name="dispatch_strategy">
                       <option value="default">default</option>

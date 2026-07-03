@@ -78,7 +78,7 @@ def latest_execution_for_task(root: Path, task_id: str) -> dict | None:
     matches = [item for item in load_executions(root) if item.get("task_id") == task_id]
     if not matches:
         return None
-    return max(matches, key=lambda item: item.get("updated_at") or item.get("finished_at") or "")
+    return max(matches, key=lambda item: (item.get("updated_at") or item.get("finished_at") or "", item.get("execution_id") or ""))
 
 
 def get_execution(root: Path, execution_id: str) -> dict | None:
@@ -99,7 +99,7 @@ def latest_active_execution_for_task(root: Path, task_id: str) -> dict | None:
     ]
     if not matches:
         return None
-    return max(matches, key=lambda item: item.get("updated_at") or item.get("started_at") or "")
+    return max(matches, key=lambda item: (item.get("updated_at") or item.get("started_at") or "", item.get("execution_id") or ""))
 
 
 def latest_open_execution_for_task(root: Path, task_id: str) -> dict | None:
@@ -110,7 +110,7 @@ def latest_open_execution_for_task(root: Path, task_id: str) -> dict | None:
     ]
     if not matches:
         return None
-    return max(matches, key=lambda item: item.get("updated_at") or item.get("started_at") or "")
+    return max(matches, key=lambda item: (item.get("updated_at") or item.get("started_at") or "", item.get("execution_id") or ""))
 
 
 def execution_log_path(root: Path, execution_id: str) -> Path:
@@ -675,6 +675,88 @@ def attempt_automatic_recovery(
     return result
 
 
+def run_automatic_recovery_chain(
+    root: Path,
+    task_id: str,
+    executor_id: str,
+    *,
+    max_attempts: int,
+    note: str | None = None,
+    auto_finish: bool = False,
+    summary: str | None = None,
+    actual_model: str | None = None,
+    verify_command: str | None = None,
+    score: int | None = None,
+    score_note: str | None = None,
+    auto_commit: bool = False,
+    auto_push: bool = False,
+    push_remote: str = "origin",
+    allow_protected_push: bool = False,
+    auto_pr: bool = False,
+    pr_base_branch: str = "main",
+) -> dict | None:
+    task = get_task(root, task_id)
+    attempts_used = int(task.get("auto_recovery_count") or 0)
+    if attempts_used >= max_attempts:
+        return None
+
+    chain: list[dict] = []
+    last_result: dict | None = None
+
+    while attempts_used < max_attempts:
+        result = attempt_automatic_recovery(
+            root,
+            task_id,
+            executor_id,
+            note=note,
+            auto_finish=auto_finish,
+            summary=summary,
+            actual_model=actual_model,
+            verify_command=verify_command,
+            score=score,
+            score_note=score_note,
+            auto_commit=auto_commit,
+            auto_push=auto_push,
+            push_remote=push_remote,
+            allow_protected_push=allow_protected_push,
+            auto_pr=auto_pr,
+            pr_base_branch=pr_base_branch,
+        )
+        if not result:
+            break
+
+        chain.append(
+            {
+                "execution_id": (result.get("execution") or {}).get("execution_id"),
+                "status": (result.get("execution") or {}).get("status"),
+                "trigger": (result.get("recovery") or {}).get("recovery_trigger")
+                or (result.get("retry") or {}).get("retry_trigger")
+                or (result.get("execution") or {}).get("failure_category"),
+                "strategy": (result.get("recovery") or {}).get("recovery_strategy")
+                or ("reroute_fallback_model" if result.get("auto_retried") else None),
+            }
+        )
+        last_result = result
+        task = get_task(root, task_id)
+        attempts_used = int(task.get("auto_recovery_count") or 0)
+        latest = result.get("execution")
+        if not latest:
+            break
+        if latest.get("status") == "finished":
+            break
+        if latest.get("status") == "review_pending" and latest.get("failure_category") != "verification_failed":
+            break
+        if latest.get("status") not in {"failed", "review_pending"}:
+            break
+
+    if not last_result:
+        return None
+    last_result["recovery_chain"] = chain
+    last_result["auto_recovery_attempts_used"] = attempts_used
+    last_result["auto_recovery_limit_reached"] = attempts_used >= max_attempts
+    return last_result
+
+
 def finish_manual_execution(
     root: Path,
     task_id: str,
@@ -934,11 +1016,17 @@ def requeue_execution_after_verification_failure(root: Path, task_id: str, verif
             "recommended_model": retry_model,
             "fallback_models": remaining_models,
             "auto_retry_count": retry_attempt,
+            "auto_recovery_count": int(task.get("auto_recovery_count") or 0) + 1,
             "last_retry_at": timestamp,
             "last_retry_reason": retry_reason,
             "last_failed_model": failed_model or None,
             "last_retry_execution_id": execution["execution_id"],
             "last_retry_trigger": "verification_failed",
+            "last_recovery_at": timestamp,
+            "last_recovery_reason": retry_reason,
+            "last_recovery_execution_id": execution["execution_id"],
+            "last_recovery_trigger": "verification_failed",
+            "last_recovery_strategy": "reroute_fallback_model",
         },
     )
     return {
@@ -950,6 +1038,8 @@ def requeue_execution_after_verification_failure(root: Path, task_id: str, verif
         "retry_model": retry_model,
         "remaining_fallback_models": remaining_models,
         "retry_attempt": retry_attempt,
+        "recovery_strategy": "reroute_fallback_model",
+        "recovery_trigger": "verification_failed",
     }
 
 

@@ -66,6 +66,7 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         status_code, policy_payload = request_json(handle.url, "/api/runtime-policy")
         assert status_code == 200
         assert policy_payload["policy"]["dispatch_strategy"] == "default"
+        assert policy_payload["policy"]["max_auto_recovery_attempts"] == 2
 
         status_code, policy_update_payload = request_json(
             handle.url,
@@ -74,6 +75,7 @@ def test_web_ui_flow(tmp_path: Path) -> None:
             payload={
                 "max_total_estimated_cost": 12.5,
                 "max_single_execution_cost": 2.5,
+                "max_auto_recovery_attempts": 3,
                 "block_on_unpriced_model": True,
                 "dispatch_strategy": "cheapest_first",
                 "cost_currency": "USD",
@@ -82,6 +84,7 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert status_code == 200
         assert policy_update_payload["policy"]["dispatch_strategy"] == "cheapest_first"
         assert policy_update_payload["policy"]["max_total_estimated_cost"] == 12.5
+        assert policy_update_payload["policy"]["max_auto_recovery_attempts"] == 3
         assert policy_update_payload["policy"]["block_on_unpriced_model"] is True
 
         status_code, route_payload = request_json(handle.url, f"/api/route/{task_id}")

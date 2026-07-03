@@ -68,6 +68,7 @@ def initialize_project(root: Path, name: str, project_type: str, force: bool = F
             {
                 "max_total_estimated_cost": None,
                 "max_single_execution_cost": None,
+                "max_auto_recovery_attempts": 2,
                 "block_on_unpriced_model": False,
                 "dispatch_strategy": "default",
                 "cost_currency": "USD",

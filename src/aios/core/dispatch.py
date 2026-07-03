@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from aios.core.ccswitch import confirm_ccswitch_bridge
-from aios.core.executions import attempt_automatic_recovery, auto_finish_execution, run_executor_with_auto_finish
+from aios.core.executions import auto_finish_execution, run_automatic_recovery_chain, run_executor_with_auto_finish
 from aios.core.executors import executor_summary, get_default_executor
 from aios.core.runtime_policy import load_runtime_policy
 from aios.core.scheduler import scheduler_summary
@@ -50,10 +50,11 @@ def auto_progress_next_step(
             pr_base_branch=pr_base_branch,
         )
         if not finish_result["finished"] and auto_recover_failures:
-            recovery_result = attempt_automatic_recovery(
+            recovery_result = run_automatic_recovery_chain(
                 root,
                 task_id=before["next_task_id"],
                 executor_id=executor_id or (finish_result.get("execution") or {}).get("executor_id"),
+                max_attempts=int(load_runtime_policy(root).get("max_auto_recovery_attempts") or 0),
                 note=note,
                 auto_finish=auto_finish,
                 summary=summary,
@@ -190,10 +191,11 @@ def auto_progress_next_step(
         pr_base_branch=pr_base_branch,
     )
     if not result.get("auto_finished") and auto_recover_failures:
-        recovery_result = attempt_automatic_recovery(
+        recovery_result = run_automatic_recovery_chain(
             root,
             task_id=candidate["task_id"],
             executor_id=selected_executor_id,
+            max_attempts=int(load_runtime_policy(root).get("max_auto_recovery_attempts") or 0),
             note=note,
             auto_finish=auto_finish,
             summary=summary,

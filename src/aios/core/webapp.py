@@ -22,7 +22,6 @@ from aios.core.context_builder import build_context_pack
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
 from aios.core.executions import (
-    attempt_automatic_recovery,
     attach_execution_session,
     build_execution_resume,
     execution_summary,
@@ -31,6 +30,7 @@ from aios.core.executions import (
     latest_execution_for_task,
     open_execution_resume_in_terminal,
     prepare_manual_execution,
+    run_automatic_recovery_chain,
     run_executor_with_auto_finish,
 )
 from aios.core.scoring import load_scores, model_score_summary
@@ -39,7 +39,7 @@ from aios.core.models import model_summary
 from aios.core.paths import aios_path
 from aios.core.project import initialize_project
 from aios.core.router import log_routing, route_task
-from aios.core.runtime_policy import runtime_policy_summary, save_runtime_policy
+from aios.core.runtime_policy import load_runtime_policy, runtime_policy_summary, save_runtime_policy
 from aios.core.scanner import scan_project
 from aios.core.scheduler import scheduler_summary
 from aios.core.tasks import (
@@ -457,10 +457,11 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         (payload.get("pr_base_branch") or "main").strip() or "main",
                     )
                     if not result.get("auto_finished") and bool(payload.get("auto_recover_failures") or payload.get("retry_on_verify_fail")):
-                        recovered = attempt_automatic_recovery(
+                        recovered = run_automatic_recovery_chain(
                             self.project_root,
                             payload["task_id"],
                             payload["executor_id"],
+                            max_attempts=int(load_runtime_policy(self.project_root).get("max_auto_recovery_attempts") or 0),
                             note=(payload.get("note") or "").strip() or None,
                             auto_finish=bool(payload.get("auto_finish")),
                             summary=(payload.get("summary") or "").strip() or None,
@@ -492,6 +493,9 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "previous_verification": result.get("previous_verification"),
                             "retry": result.get("retry"),
                             "recovery": result.get("recovery"),
+                            "recovery_chain": result.get("recovery_chain"),
+                            "auto_recovery_attempts_used": result.get("auto_recovery_attempts_used"),
+                            "auto_recovery_limit_reached": result.get("auto_recovery_limit_reached"),
                             "reason": result.get("reason"),
                             "git_commit": result.get("git_commit"),
                             "git_push": result.get("git_push"),
@@ -534,6 +538,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         {
                             "max_total_estimated_cost": payload.get("max_total_estimated_cost"),
                             "max_single_execution_cost": payload.get("max_single_execution_cost"),
+                            "max_auto_recovery_attempts": payload.get("max_auto_recovery_attempts"),
                             "block_on_unpriced_model": bool(payload.get("block_on_unpriced_model")),
                             "dispatch_strategy": (payload.get("dispatch_strategy") or "default").strip() or "default",
                             "cost_currency": (payload.get("cost_currency") or "USD").strip() or "USD",
