@@ -35,6 +35,28 @@ from aios.utils.text import now_iso, today
 ACTIVE_STATUSES = {"prepared", "running"}
 OPEN_STATUSES = {"prepared", "running", "review_pending"}
 
+NETWORK_FAILURE_MARKERS = [
+    "connection refused",
+    "could not resolve",
+    "name or service not known",
+    "temporary failure in name resolution",
+    "network is unreachable",
+    "connection timed out",
+    "read timed out",
+    "timed out",
+    "dns",
+]
+
+AUTH_FAILURE_MARKERS = [
+    "unauthorized",
+    "forbidden",
+    "invalid api key",
+    "missing api key",
+    "authentication",
+    "auth failed",
+    "permission denied",
+]
+
 
 def executions_path(root: Path) -> Path:
     return require_aios(root) / "executions.json"
@@ -205,6 +227,7 @@ def run_executor_execution(
                 "estimated_total_cost": cost["estimated_total_cost"],
                 "cost_currency": cost["cost_currency"],
                 "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+                **(_classify_failed_execution(completed.stdout or "", completed.stderr or "", completed.returncode) if status == "failed" else _clear_failure_fields()),
             },
         )
         _auto_attach_executor_session(root, execution["execution_id"], executor, completed.stdout, completed.stderr)
@@ -222,6 +245,13 @@ def run_executor_execution(
                 "executor_log_path": str(log_path.relative_to(root)),
                 "executor_stderr_excerpt": str(exc),
                 "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+                **_failure_fields(
+                    category="executor_missing_binary",
+                    summary=f"Executor binary not found: {executor.get('binary')}",
+                    retryable=False,
+                    next_action="fix_executor_binary",
+                    source="executor",
+                ),
             },
         )
         raise ValueError(f"Executor binary not found: {executor.get('binary')}") from exc
@@ -250,6 +280,13 @@ def run_executor_execution(
                 "output_token_estimate": output_tokens,
                 "total_token_estimate": int(execution.get("prompt_token_estimate") or 0) + output_tokens,
                 "duration_seconds": round(time.monotonic() - started_monotonic, 3),
+                **_failure_fields(
+                    category="executor_timeout",
+                    summary=f"Executor timed out after {timeout_seconds} seconds.",
+                    retryable=True,
+                    next_action="inspect_timeout",
+                    source="executor",
+                ),
             },
         )
         raise ValueError(f"Executor timed out after {timeout_seconds} seconds.") from exc
@@ -579,6 +616,7 @@ def finish_manual_execution(
             item["updated_at"] = timestamp
             item["status"] = "finished"
             item["duration_seconds"] = execution_duration_seconds({**item, "finished_at": timestamp}) or item.get("duration_seconds")
+            item.update(_clear_failure_fields())
             execution = item
             resolved_model = item["actual_model"] or item.get("planned_model") or resolved_model
             break
@@ -710,6 +748,13 @@ def auto_finish_execution(
                 "test_command": verify_command,
                 "test_result": final_test_result,
                 "updated_at": now_iso(),
+                **(_failure_fields(
+                    category="verification_failed",
+                    summary=f"Verification failed with exit code {verification['exit_code']}.",
+                    retryable=True,
+                    next_action="retry_or_finish",
+                    source="verification",
+                ) if verification["exit_code"] != 0 else _clear_failure_fields()),
             },
         )
         if verification["exit_code"] != 0:
@@ -1004,6 +1049,7 @@ def prepare_execution_record(
             item["estimated_total_cost"] = cost["estimated_total_cost"]
             item["cost_currency"] = cost["cost_currency"]
             item["operator_note"] = note
+            item.update(_clear_failure_fields())
             item["executor_id"] = executor.get("id") if executor else None
             item["executor_label"] = executor.get("label") if executor else None
             item["executor_resume_supported"] = executor_supports_session_resume(executor) if executor else False
@@ -1040,6 +1086,12 @@ def prepare_execution_record(
         "test_command": None,
         "test_result": None,
         "completion_summary": None,
+        "failure_source": None,
+        "failure_category": None,
+        "failure_summary": None,
+        "failure_retryable": None,
+        "failure_next_action": None,
+        "failure_detected_at": None,
         "prompt_token_estimate": prompt_tokens,
         "output_token_estimate": 0,
         "total_token_estimate": cost["total_tokens"],
@@ -1157,6 +1209,62 @@ def _truncate_output(text: str, limit: int = 800) -> str | None:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _failure_fields(
+    *,
+    category: str,
+    summary: str,
+    retryable: bool,
+    next_action: str,
+    source: str,
+) -> dict:
+    return {
+        "failure_source": source,
+        "failure_category": category,
+        "failure_summary": summary,
+        "failure_retryable": retryable,
+        "failure_next_action": next_action,
+        "failure_detected_at": now_iso(),
+    }
+
+
+def _clear_failure_fields() -> dict:
+    return {
+        "failure_source": None,
+        "failure_category": None,
+        "failure_summary": None,
+        "failure_retryable": None,
+        "failure_next_action": None,
+        "failure_detected_at": None,
+    }
+
+
+def _classify_failed_execution(stdout: str, stderr: str, exit_code: int | None) -> dict:
+    combined = "\n".join(part for part in [stdout or "", stderr or ""] if part).lower()
+    if any(marker in combined for marker in AUTH_FAILURE_MARKERS):
+        return _failure_fields(
+            category="provider_auth_failed",
+            summary=f"Execution failed with exit code {exit_code}. Provider authentication appears invalid.",
+            retryable=False,
+            next_action="fix_provider_auth",
+            source="executor",
+        )
+    if any(marker in combined for marker in NETWORK_FAILURE_MARKERS):
+        return _failure_fields(
+            category="provider_unreachable",
+            summary=f"Execution failed with exit code {exit_code}. Provider network appears unreachable.",
+            retryable=True,
+            next_action="probe_provider",
+            source="executor",
+        )
+    return _failure_fields(
+        category="executor_nonzero_exit",
+        summary=f"Execution failed with exit code {exit_code}.",
+        retryable=True,
+        next_action="inspect_executor_failure",
+        source="executor",
+    )
 
 
 def _prompt_token_estimate(root: Path, relative_pack_path: str | None) -> int:

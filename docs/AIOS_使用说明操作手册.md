@@ -37,6 +37,7 @@
 - 可通过 `aios run TASK-ID --executor codex-cli` 直接调起 CLI；
 - 自动执行成功后不会直接把任务标记为完成，而是进入待复核状态。
 - 可在项目控制台配置预算策略，让自动派发在超预算或模型未定价时自动停下。
+- 失败时会自动记录失败分类，便于后续重试和定位。
 
 ## 2. 运行环境
 
@@ -345,6 +346,37 @@ aios model probe gpt-5.5
 - 剩余项目预算
 
 如果你看到 `next_action = adjust_budget`，说明当前不是代码或上下文问题，而是预算策略主动拦下了自动派发。
+
+### 第 4.4 步：查看失败分类与建议动作
+
+当自动执行失败时，AIOS 现在不会只留下 stderr 文本，还会记录结构化失败信息。
+
+你可以在单项目 Web UI 的“执行状态”里直接看到：
+
+- 失败来源
+- 失败分类
+- 是否建议自动重试
+- 建议动作
+- 失败摘要
+
+当前首版常见分类包括：
+
+- `executor_missing_binary`
+- `executor_timeout`
+- `provider_auth_failed`
+- `provider_unreachable`
+- `executor_nonzero_exit`
+- `verification_failed`
+
+其中一个很重要的区别是：
+
+- 如果代码执行完成，但验证命令失败，任务仍然会停在 `review_pending`
+- 但调度器会把下一步动作改成 `retry_or_finish`
+
+这能帮助你区分：
+
+- 代码根本没跑起来
+- 代码跑了，但验证没过
 
 ### 第 5 步：查看任务列表或任务详情
 

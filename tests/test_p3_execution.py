@@ -7,10 +7,11 @@ from urllib.request import Request, urlopen
 
 import aios.core.ccswitch as ccswitch_core
 import aios.core.executors as executors_core
+import aios.core.executions as executions_core
 import aios.core.models as models_core
 import aios.core.terminal_resume as terminal_resume
 from aios.core.executors import create_executor, load_executor_library
-from aios.core.executions import build_execution_resume, latest_execution_for_task, load_executions
+from aios.core.executions import build_execution_resume, latest_execution_for_task, load_executions, run_executor_execution
 from aios.core.instance_manager import project_id_for_root, stop_project_instance
 from aios.core.launcher import start_launcher_server
 from aios.core.models import create_model, update_model
@@ -1329,6 +1330,39 @@ def test_run_executor_cli_can_auto_finish_after_verification(tmp_path: Path, mon
     assert updated_task["status"] == "done"
 
 
+def test_run_executor_execution_classifies_missing_binary_failure(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
+    create_executor(
+        None,
+        "missing-binary-cli",
+        label="Missing Binary CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+    monkeypatch.setattr(executions_core.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("missing binary")))
+
+    try:
+        run_executor_execution(tmp_path, task["id"], "missing-binary-cli")
+        raise AssertionError("expected ValueError")
+    except ValueError as exc:
+        assert "Executor binary not found" in str(exc)
+
+    execution = latest_execution_for_task(tmp_path, task["id"])
+    assert execution is not None
+    assert execution["failure_category"] == "executor_missing_binary"
+    assert execution["failure_next_action"] == "fix_executor_binary"
+    assert execution["failure_retryable"] is False
+
+
 def test_run_executor_cli_can_retry_once_with_fallback_after_verification_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     main(["--root", str(tmp_path), "init", "--name", "demo"])
@@ -1824,6 +1858,8 @@ def test_run_dispatch_api_keeps_review_pending_when_verification_fails(tmp_path:
         assert payload["auto_finished"] is False
         assert payload["execution"]["status"] == "review_pending"
         assert "Verification failed" in payload["reason"]
+        assert payload["execution"]["failure_category"] == "verification_failed"
+        assert payload["execution"]["failure_next_action"] == "retry_or_finish"
     finally:
         handle.close()
 

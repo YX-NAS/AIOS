@@ -440,6 +440,11 @@ function renderExecution(task, execution) {
     <div class="muted">开始时间：${execution.started_at || "-"}</div>
     <div class="muted">完成时间：${execution.finished_at || "-"}</div>
     <div class="muted">执行时长：${execution.duration_seconds != null ? `${Number(execution.duration_seconds).toFixed(2)}s` : "-"}</div>
+    <div class="muted">失败来源：${execution.failure_source || "-"}</div>
+    <div class="muted">失败分类：${execution.failure_category || "-"}</div>
+    <div class="muted">可自动重试：${execution.failure_retryable == null ? "-" : (execution.failure_retryable ? "是" : "否")}</div>
+    <div class="muted">失败建议动作：${execution.failure_next_action || "-"}</div>
+    <div class="muted">失败摘要：${execution.failure_summary || "-"}</div>
     <div class="muted">Prompt Token：${execution.prompt_token_estimate || 0}</div>
     <div class="muted">输出 Token：${execution.output_token_estimate || 0}</div>
     <div class="muted">总 Token：${execution.total_token_estimate || 0}</div>
@@ -470,6 +475,8 @@ function renderScheduler(task) {
     <div class="muted">下一步：${item.next_action || "-"}</div>
     <div class="muted">原因：${item.reason || "-"}</div>
     <div class="muted">预算状态：${item.budget?.status || "-"}</div>
+    <div class="muted">失败分类：${item.failure_category || "-"}</div>
+    <div class="muted">建议自动重试：${item.failure_retryable == null ? "-" : (item.failure_retryable ? "是" : "否")}</div>
     <div class="muted">预计 Prompt Token：${item.budget?.prompt_token_estimate ?? "-"}</div>
     <div class="muted">预计成本：${item.budget?.estimated_total_cost != null ? `${item.budget.estimated_total_cost} ${item.budget.cost_currency || "USD"}` : "-"}</div>
     <div class="muted">剩余项目预算：${item.budget?.remaining_total_budget != null ? `${item.budget.remaining_total_budget} ${item.budget.cost_currency || "USD"}` : "-"}</div>

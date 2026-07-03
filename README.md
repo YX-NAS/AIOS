@@ -31,6 +31,7 @@ bridge 恢复信号自动确认方案见 [docs/P3_24_DESIGN.md](/Users/yaxun/Syn
 验证失败后的自动二次派发方案见 [docs/P3_28_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_28_DESIGN.md)。
 成本与执行统计方案见 [docs/P3_9_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_9_DESIGN.md)。
 Provider / 鉴权就绪探测方案见 [docs/P3_29_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_29_DESIGN.md)。
+失败分类与重试策略方案见 [docs/P3_30_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_30_DESIGN.md)。
 预算阈值与调度策略方案见 [docs/P3_31_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_31_DESIGN.md)。
 
 ## MVP 边界
@@ -86,6 +87,7 @@ Provider / 鉴权就绪探测方案见 [docs/P3_29_DESIGN.md](/Users/yaxun/Synol
 - 全局模型库现在还能维护输入/输出单价，执行记录会按 Context Pack 和执行输出估算 token、成本与耗时
 - 单项目 Web UI 现在还能配置项目级预算策略，自动派发会在预算超限或模型未定价时主动停下
 - 全局模型库现在还能主动探测 provider 可达性，把“已配置”继续推进到“最近一次握手正常”
+- 执行记录现在还能结构化区分失败类型，并给出下一步建议动作
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 - 自动重试当前只做“一次受控 fallback 重试”，不会无限循环切模型

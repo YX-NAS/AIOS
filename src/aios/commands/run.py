@@ -128,6 +128,9 @@ def run_run(root: Path, args: argparse.Namespace) -> None:
             print(f"Log: {execution['executor_log_path']}")
         if result.get("verification"):
             print(f"Verification: {result['verification']['summary']}")
+        if execution.get("failure_category"):
+            print(f"Failure category: {execution['failure_category']}")
+            print(f"Failure action: {execution.get('failure_next_action') or '-'}")
         _print_git_commit(result.get("git_commit"))
         _print_git_push(result.get("git_push"))
         _print_git_pr(result.get("git_pr"))

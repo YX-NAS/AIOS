@@ -74,14 +74,18 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         scheduler_state = "done"
         next_action = None
         reason = "任务已完成。"
+    elif execution and execution.get("status") == "review_pending" and execution.get("failure_category") == "verification_failed":
+        scheduler_state = "review_pending"
+        next_action = execution.get("failure_next_action") or "retry_or_finish"
+        reason = execution.get("failure_summary") or "验证失败，等待人工确认或重试。"
     elif execution and execution.get("status") == "review_pending":
         scheduler_state = "review_pending"
         next_action = "review_finish"
         reason = "CLI 执行已完成，等待人工 review 和 finish。"
     elif execution and execution.get("status") == "failed":
         scheduler_state = "failed"
-        next_action = "inspect_retry"
-        reason = execution.get("executor_stderr_excerpt") or "最近一次执行失败。"
+        next_action = execution.get("failure_next_action") or "inspect_retry"
+        reason = execution.get("failure_summary") or execution.get("executor_stderr_excerpt") or "最近一次执行失败。"
     elif execution and bridge_confirmation_status == "confirmed_failed":
         scheduler_state = "failed"
         next_action = "retry_bridge"
@@ -132,6 +136,8 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         "pack_warnings": warnings,
         "budget": budget,
         "latest_execution_status": execution.get("status") if execution else None,
+        "failure_category": execution.get("failure_category") if execution else None,
+        "failure_retryable": execution.get("failure_retryable") if execution else None,
         "bridge_confirmation_status": bridge_confirmation_status or None,
         "bridge_resume_signal_status": execution.get("ccswitch_bridge_resume_signal_status") if execution else None,
     }
