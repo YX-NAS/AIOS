@@ -19,6 +19,7 @@ from aios.core.ccswitch import (
     with_bridge_runtime_signal,
 )
 from aios.core.context_builder import build_context_pack
+from aios.core.auto_switch import run_auto_pipeline_step
 from aios.core.dispatch import auto_progress_next_step
 from aios.core.executors import executor_summary
 from aios.core.executions import (
@@ -547,6 +548,23 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                             "git_commit": result.get("git_commit"),
                             "git_push": result.get("git_push"),
                             "git_pr": result.get("git_pr"),
+                        },
+                        status=HTTPStatus.CREATED,
+                    )
+                if parsed.path == "/api/run/pipeline":
+                    result = run_auto_pipeline_step(
+                        self.project_root,
+                        executor_id=(payload.get("executor_id") or "").strip() or None,
+                        model=(payload.get("model") or "").strip() or None,
+                        auto_switch=bool(payload.get("auto_switch")),
+                        switch_delay=float(payload.get("switch_delay") or 2.0),
+                        auto_finish=bool(payload.get("auto_finish")),
+                        verify_command=(payload.get("verify_command") or "").strip() or None,
+                    )
+                    return self._send_json(
+                        {
+                            "message": f"Pipeline {result['pipeline_status']}.",
+                            **result,
                         },
                         status=HTTPStatus.CREATED,
                     )

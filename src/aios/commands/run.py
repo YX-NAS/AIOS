@@ -17,6 +17,7 @@ from aios.core.executions import (
     run_executor_execution,
     run_executor_with_auto_finish,
 )
+from aios.core.auto_switch import run_auto_pipeline_step
 from aios.core.runtime_policy import load_runtime_policy
 
 
@@ -56,9 +57,24 @@ def add_run_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--terminal-app", default="Terminal", help="Terminal app used by --open-terminal. Defaults to Terminal.")
     parser.add_argument("--query", default=None, help="Optional search text used for session suggestions.")
     parser.add_argument("--limit", type=int, default=5, help="Maximum historical session suggestions to show. Defaults to 5.")
+    parser.add_argument("--auto-switch", action="store_true", help="Automatically switch ccswitch model via Deep Links before execution.")
+    parser.add_argument("--switch-delay", type=float, default=2.0, help="Delay in seconds between ccswitch Deep Link imports. Defaults to 2.0.")
 
 
 def run_run(root: Path, args: argparse.Namespace) -> None:
+    if args.run_target == "pipeline":
+        result = run_auto_pipeline_step(
+            root,
+            executor_id=args.executor,
+            model=args.model,
+            auto_switch=args.auto_switch,
+            switch_delay=args.switch_delay,
+            auto_finish=args.auto_finish,
+            verify_command=args.verify_command,
+        )
+        _print_pipeline_result(result)
+        return
+
     if args.run_target == "auto":
         result = auto_progress_next_step(
             root,
@@ -468,3 +484,43 @@ def _print_git_pr(pr: dict | None) -> None:
         return
     if pr.get("reason"):
         print(f"Draft PR skipped: {pr['reason']}")
+
+
+def _print_pipeline_result(result: dict) -> None:
+    """Print pipeline result in human-readable form."""
+    print(f"Pipeline status: {result.get('pipeline_status')}")
+    if result.get("task_id"):
+        print(f"Task: {result['task_id']} {result.get('task_title', '')}")
+    if result.get("model_id"):
+        print(f"Model: {result['model_id']}")
+    if result.get("reason"):
+        print(f"Reason: {result['reason']}")
+
+    pipeline_steps = result.get("pipeline_steps") or []
+    for step in pipeline_steps:
+        step_name = step.get("step", "unknown")
+        step_result = step.get("result", {})
+
+        if step_name == "auto_switch":
+            if step_result.get("success"):
+                print(f"  [auto-switch] Model switch triggered via Deep Links")
+            else:
+                print(f"  [auto-switch] FAILED: {step_result.get('reason', '')}")
+
+        elif step_name == "build_command":
+            print(f"  [build] Command: {step_result.get('command_str', '')[:120]}")
+
+        elif step_name == "run_executor":
+            exit_code = step_result.get("exit_code", -1)
+            success = step_result.get("success", False)
+            if success:
+                print(f"  [execute] SUCCESS (exit {exit_code})")
+            else:
+                print(f"  [execute] FAILED (exit {exit_code})")
+                stderr = step_result.get("stderr", "")
+                if stderr:
+                    print(f"    stderr: {stderr[:200]}")
+
+    scheduler = result.get("scheduler") or {}
+    if scheduler.get("next_action"):
+        print(f"Next action: {scheduler['next_action']}")
