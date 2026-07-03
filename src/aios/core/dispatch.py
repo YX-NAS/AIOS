@@ -288,6 +288,9 @@ def build_dispatch_block_reason(summary: dict) -> str:
         return "存在执行失败任务，需先排查失败原因。"
     if summary.get("active_count"):
         return "存在执行中的任务，暂不自动派发新任务。"
+    if summary.get("bridge_pending_count"):
+        item = next((entry for entry in summary.get("items", []) if entry.get("scheduler_state") == "bridge_confirmation"), None)
+        return item.get("reason", "存在待确认的 bridge，需先确认外部切换结果后再继续。") if item else "存在待确认的 bridge，需先确认外部切换结果后再继续。"
     if any(item.get("next_action") == "adjust_budget" for item in summary.get("items", [])):
         item = next((entry for entry in summary.get("items", []) if entry.get("next_action") == "adjust_budget"), None)
         return item.get("reason") if item else "预算策略阻止了自动派发。"

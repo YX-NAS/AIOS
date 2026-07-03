@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from aios.core.ccswitch import (
     build_ccswitch_bridge,
@@ -92,6 +92,8 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 if parsed.path == "/api/tasks":
                     return self._send_json({"tasks": load_tasks_safe(self.project_root)})
                 if parsed.path == "/api/scheduler":
+                    if not aios_path(self.project_root).exists():
+                        return self._send_json(scheduler_summary_empty())
                     return self._send_json(scheduler_summary(self.project_root))
                 if parsed.path == "/api/runtime-policy":
                     if not aios_path(self.project_root).exists():
@@ -856,4 +858,3 @@ def pack_task_id(pack_name: str) -> str | None:
     if len(parts) < 3:
         return None
     return "-".join(parts[:3])
-from urllib.parse import urlparse, parse_qs

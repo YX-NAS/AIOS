@@ -206,37 +206,13 @@ function renderModels() {
   if (!state.models.length) {
     elements.modelList.innerHTML = "";
     emptyEl.classList.remove("hidden");
+    renderModelStats();
     return;
   }
   emptyEl.classList.add("hidden");
 
-  elements.modelList.innerHTML = state.models
-    .map(
-      (model) => `
-        <tr class="model-row" data-model-id="${model.id}">
-          <td><input name="modelId" value="${model.id}" required /></td>
-          <td><input name="label" value="${model.label}" /></td>
-          <td><input name="provider" value="${model.provider}" placeholder="例如：openai" /></td>
-          <td><input name="endpoint" value="${model.endpoint || ""}" placeholder="https://api.example.com/v1" /></td>
-          <td><input name="configUrl" value="${model.config_url || ""}" placeholder="https://..." /></td>
-          <td><input name="authEnvVars" value="${(model.auth_env_vars || []).join(", ")}" placeholder="OPENAI_API_KEY" /></td>
-          <td><input name="inputCostPer1m" value="${model.input_cost_per_1m ?? ""}" type="number" min="0" step="0.000001" placeholder="0.00" /></td>
-          <td><input name="outputCostPer1m" value="${model.output_cost_per_1m ?? ""}" type="number" min="0" step="0.000001" placeholder="0.00" /></td>
-          <td><input name="costCurrency" value="${model.cost_currency || "USD"}" placeholder="USD" /></td>
-          <td><input name="notes" value="${model.notes || ""}" placeholder="路由或登录说明" /></td>
-          <td class="td-task-types"><div class="task-type-checkboxes" data-task-types="${model.task_types.join(",")}"></div></td>
-          <td><input name="rank" type="number" min="1" value="${model.rank}" class="rank-input" /></td>
-          <td class="td-checkbox"><label class="model-toggle"><input type="checkbox" name="enabled" ${model.enabled ? "checked" : ""} /><span></span></label></td>
-          <td>${renderRuntimeBadge(model.runtime)}</td>
-          <td class="td-actions">
-            <button type="button" class="button ghost probe-model-button" data-model-id="${model.id}">探测</button>
-            <button type="button" class="button secondary save-model-button" data-model-id="${model.id}">保存</button>
-            <button type="button" class="button warn delete-model-button" data-model-id="${model.id}">删除</button>
-          </td>
-        </tr>
-      `,
-    )
-    .join("");
+  // ... table rows rendered below
+  _renderModelRows();
 
   // Populate task type checkboxes in each row
   document.querySelectorAll(".task-type-checkboxes").forEach((box) => {
@@ -249,24 +225,67 @@ function renderModels() {
       .join("");
   });
 
+  bindModelRowEvents();
+  renderModelStats();
+}
+
+function _renderModelRows() {
+  elements.modelList.innerHTML = state.models
+    .map(
+      (model) => `
+        <tr class="model-row" data-model-id="${model.id}">
+          <td class="col-id"><input name="modelId" value="${model.id}" required /></td>
+          <td class="col-label"><input name="label" value="${model.label}" /></td>
+          <td><input name="provider" value="${model.provider}" placeholder="openai" /></td>
+          <td><input name="endpoint" value="${model.endpoint || ""}" placeholder="https://api.example.com/v1" /></td>
+          <td class="col-price"><div class="cost-input-wrapper"><input name="inputCostPer1m" value="${model.input_cost_per_1m ?? ""}" type="number" min="0" step="0.000001" placeholder="—" /></div></td>
+          <td class="col-price"><div class="cost-input-wrapper"><input name="outputCostPer1m" value="${model.output_cost_per_1m ?? ""}" type="number" min="0" step="0.000001" placeholder="—" /></div></td>
+          <td class="col-currency"><input name="costCurrency" value="${model.cost_currency || "USD"}" placeholder="USD" /></td>
+          <td><input name="authEnvVars" value="${(model.auth_env_vars || []).join(", ")}" placeholder="API_KEY" /></td>
+          <td class="td-task-types"><div class="task-type-checkboxes" data-task-types="${model.task_types.join(",")}"></div></td>
+          <td class="td-checkbox"><input name="rank" type="number" min="1" value="${model.rank}" class="rank-input" /></td>
+          <td>${renderRuntimeBadge(model.runtime)}</td>
+          <td class="td-actions">
+            <button type="button" class="button ghost probe-model-button" data-model-id="${model.id}">探测</button>
+            <button type="button" class="button secondary save-model-button" data-model-id="${model.id}">保存</button>
+            <button type="button" class="button warn delete-model-button" data-model-id="${model.id}">删除</button>
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+}
+
+function renderModelStats() {
+  const el = document.getElementById("modelToolbarStats");
+  if (!el) return;
+  const total = state.models.length;
+  const ready = state.models.filter(m => m.runtime && m.runtime.ready).length;
+  const priced = state.models.filter(m => m.input_cost_per_1m != null || m.output_cost_per_1m != null).length;
+  el.innerHTML =
+    `<span>模型 <span class="table-toolbar-stat-value">${total}</span></span>` +
+    `<span>就绪 <span class="table-toolbar-stat-value">${ready}</span></span>` +
+    `<span>已定价 <span class="table-toolbar-stat-value">${priced}</span></span>`;
+}
+
+function bindModelRowEvents() {
   document.querySelectorAll(".save-model-button").forEach((button) => {
     button.addEventListener("click", async () => {
       const row = button.closest(".model-row");
       await runAction(async () => {
-        const enabledCheckbox = row.querySelector('input[name="enabled"]');
         const payload = {
           current_model_id: row.dataset.modelId,
           model_id: String(row.querySelector('input[name="modelId"]').value || "").trim(),
           label: String(row.querySelector('input[name="label"]').value || "").trim(),
           provider: String(row.querySelector('input[name="provider"]').value || "").trim(),
           endpoint: String(row.querySelector('input[name="endpoint"]').value || "").trim(),
-          config_url: String(row.querySelector('input[name="configUrl"]').value || "").trim(),
+          config_url: "",
           auth_env_vars: parseCommaList(row.querySelector('input[name="authEnvVars"]').value || ""),
           input_cost_per_1m: row.querySelector('input[name="inputCostPer1m"]').value || null,
           output_cost_per_1m: row.querySelector('input[name="outputCostPer1m"]').value || null,
           cost_currency: String(row.querySelector('input[name="costCurrency"]').value || "").trim() || "USD",
-          notes: String(row.querySelector('input[name="notes"]').value || "").trim(),
-          enabled: enabledCheckbox.checked,
+          notes: "",
+          enabled: true,
           rank: Number(row.querySelector('input[name="rank"]').value || 1),
           task_types: (() => {
             const checked = row.querySelectorAll('input[name="taskType"]:checked');

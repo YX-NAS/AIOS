@@ -18,7 +18,8 @@ def request_json(base_url: str, path: str, method: str = "GET", payload: dict | 
         return response.status, json.loads(response.read().decode("utf-8"))
 
 
-def test_web_ui_flow(tmp_path: Path) -> None:
+def test_web_ui_flow(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     handle = start_web_server(tmp_path, port=0)
     try:
         status_code, status_payload = request_json(handle.url, "/api/status")
@@ -170,5 +171,26 @@ def test_web_ui_flow(tmp_path: Path) -> None:
         assert "renderPagination(elements.packPagination" in js
         assert "renderSessionHistory()" in js
         assert "runtimePolicyForm" in js
+    finally:
+        handle.close()
+
+
+def test_web_ui_uninitialized_project_refresh_endpoints(tmp_path: Path) -> None:
+    handle = start_web_server(tmp_path, port=0)
+    try:
+        status_code, status_payload = request_json(handle.url, "/api/status")
+        assert status_code == 200
+        assert status_payload["initialized"] is False
+
+        for path in ("/api/tasks", "/api/packs", "/api/handoffs", "/api/scheduler"):
+            status_code, payload = request_json(handle.url, path)
+            assert status_code == 200
+            assert isinstance(payload, dict)
+
+        status_code, scheduler_payload = request_json(handle.url, "/api/scheduler")
+        assert status_code == 200
+        assert scheduler_payload["items"] == []
+        assert scheduler_payload["ready_count"] == 0
+        assert scheduler_payload["next_task_id"] is None
     finally:
         handle.close()

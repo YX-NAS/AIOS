@@ -1,0 +1,21 @@
+{
+  "name": "aios-tutorial",
+  "version": "1.0.0",
+  "description": "AIOS multi-model development center tutorial video",
+  "type": "module",
+  "scripts": {
+    "start": "remotion studio",
+    "build": "remotion render AIOSTutorial out/aios-tutorial.mp4",
+    "upgrade": "remotion upgrade"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/player": "^4.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
+  }
+}

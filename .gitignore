@@ -7,3 +7,8 @@ dist/
 build/
 .aios/
 .DS_Store
+node_modules/
+docs/aios-tutorial/node_modules/
+docs/aios-tutorial/out/
+docs/aios-tutorial/.cache/
+docs/aios-tutorial/dist/

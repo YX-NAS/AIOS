@@ -13,6 +13,7 @@ from aios.core.models import create_model, save_model_handshakes
 
 
 def test_scheduler_summary_tracks_ready_blocked_and_review_pending(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
@@ -151,6 +152,7 @@ def test_scheduler_api_is_visible_in_web_ui(tmp_path: Path) -> None:
 
 
 def test_scheduler_blocks_ready_task_when_budget_policy_is_exceeded(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")

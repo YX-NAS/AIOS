@@ -2428,7 +2428,7 @@ def test_run_dispatch_api_blocks_when_bridge_confirmation_is_pending(tmp_path: P
         )
         assert status_code == 201
         assert payload["dispatched"] is False
-        assert "待确认的 bridge" in payload["reason"]
+        assert "Bridge" in payload["reason"]
     finally:
         handle.close()
 

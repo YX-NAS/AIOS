@@ -53,8 +53,22 @@ def default_model_library() -> list[dict]:
                 model_tasks[model] = set()
                 order.append(model)
             model_tasks[model].add(task_type)
+
+    # Official API pricing per 1M tokens (USD), sourced 2026-07-03
+    _official_pricing: dict[str, tuple[float | None, float | None, str]] = {
+        "gpt-5.5": (5.00, 30.00, "USD"),
+        "gpt-5.4-mini": (0.75, 4.50, "USD"),
+        "claude": (3.00, 15.00, "USD"),
+        "deepseek-v4-pro": (0.435, 0.87, "USD"),
+        "deepseek-v4-flash": (0.14, 0.28, "USD"),
+        "minimax-m2.7-highspeed": (0.60, 2.40, "USD"),
+    }
+
     models: list[dict] = []
     for index, model in enumerate(order):
+        input_cost, output_cost, currency = _official_pricing.get(
+            model, (None, None, "USD")
+        )
         models.append(
             {
                 "id": model,
@@ -69,9 +83,9 @@ def default_model_library() -> list[dict]:
                 "notes": None,
                 "config_url": None,
                 "auth_env_vars": default_auth_env_vars(infer_provider(model)),
-                "input_cost_per_1m": None,
-                "output_cost_per_1m": None,
-                "cost_currency": "USD",
+                "input_cost_per_1m": input_cost,
+                "output_cost_per_1m": output_cost,
+                "cost_currency": currency,
             }
         )
     return models
