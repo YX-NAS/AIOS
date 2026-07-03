@@ -46,6 +46,23 @@ def _get_context_window(root: Path, model: str) -> int:
 
 
 def build_context_pack(root: Path, task: dict, model: str) -> dict:
+    preview = preview_context_pack(root, task, model)
+    target = require_aios(root) / "context-packs" / f"{task['id']}-{safe_model_name(model)}.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(preview["content"], encoding="utf-8")
+    return {
+        "path": target,
+        "token_estimate": preview["token_estimate"],
+        "context_window": preview["context_window"],
+        "window_usage_pct": preview["window_usage_pct"],
+        "warning": preview["warning"],
+        "warnings": preview["warnings"],
+        "relevant_files": preview["relevant_files"],
+        "quality": preview["quality"],
+    }
+
+
+def preview_context_pack(root: Path, task: dict, model: str) -> dict:
     aios_dir = require_aios(root)
     route = route_task(task, root)
     model_key = model.lower()
@@ -132,10 +149,7 @@ def build_context_pack(root: Path, task: dict, model: str) -> dict:
     if "deepseek" not in model_key and "minimax" not in model_key:
         parts.extend(["", "### 架构决策", "", decisions_text])
 
-    target = aios_dir / "context-packs" / f"{task['id']}-{safe_model_name(model)}.md"
-    target.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(parts).rstrip() + "\n"
-    target.write_text(content, encoding="utf-8")
 
     token_estimate = estimate_tokens(content)
     context_window = _get_context_window(root, model)
@@ -147,7 +161,7 @@ def build_context_pack(root: Path, task: dict, model: str) -> dict:
         warning = warning or "Context pack exceeds 90% of model context window"
 
     return {
-        "path": target,
+        "content": content,
         "token_estimate": token_estimate,
         "context_window": context_window,
         "window_usage_pct": window_usage_pct,

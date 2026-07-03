@@ -5,6 +5,7 @@ from pathlib import Path
 from aios.core.ccswitch import with_bridge_runtime_signal
 from aios.core.context_builder import inspect_context_pack
 from aios.core.executions import latest_execution_for_task
+from aios.core.runtime_policy import budget_guard_for_task, load_runtime_policy
 from aios.core.tasks import get_task, load_tasks
 
 
@@ -25,8 +26,20 @@ def scheduler_summary(root: Path) -> dict:
     active = [item for item in items if item["scheduler_state"] == "active"]
 
     next_item = None
+    runtime_policy = load_runtime_policy(root)
+    dispatch_strategy = runtime_policy.get("dispatch_strategy") or "default"
     for state in ("review_pending", "failed", "bridge_confirmation", "ready", "active"):
-        next_item = next((item for item in items if item["scheduler_state"] == state), None)
+        state_items = [item for item in items if item["scheduler_state"] == state]
+        if state == "ready" and dispatch_strategy == "cheapest_first":
+            state_items = sorted(
+                state_items,
+                key=lambda item: (
+                    item.get("budget", {}).get("estimated_total_cost") is None,
+                    item.get("budget", {}).get("estimated_total_cost") or 0.0,
+                    item.get("task_id") or "",
+                ),
+            )
+        next_item = state_items[0] if state_items else None
         if next_item:
             break
 
@@ -41,6 +54,7 @@ def scheduler_summary(root: Path) -> dict:
         "next_task_id": next_item["task_id"] if next_item else None,
         "next_task_title": next_item["task_title"] if next_item else None,
         "next_action": next_item["next_action"] if next_item else None,
+        "dispatch_strategy": dispatch_strategy,
     }
 
 
@@ -93,9 +107,17 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         next_action = "fix_pack"
         reason = "Context Pack 质量存在强告警，建议先修复上下文后再执行。"
     else:
-        scheduler_state = "ready"
-        next_action = "run_executor"
-        reason = "依赖已满足，可以启动执行。"
+        budget = budget_guard_for_task(root, task, task["recommended_model"])
+        if budget["status"] == "blocked":
+            scheduler_state = "blocked"
+            next_action = "adjust_budget"
+            reason = budget["reason"]
+        else:
+            scheduler_state = "ready"
+            next_action = "run_executor"
+            reason = "依赖已满足，可以启动执行。"
+    if 'budget' not in locals():
+        budget = budget_guard_for_task(root, task, task["recommended_model"]) if task["status"] != "done" else None
 
     return {
         "task_id": task["id"],
@@ -108,6 +130,7 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         "unmet_dependencies": unmet_dependencies,
         "pack_quality": pack_quality,
         "pack_warnings": warnings,
+        "budget": budget,
         "latest_execution_status": execution.get("status") if execution else None,
         "bridge_confirmation_status": bridge_confirmation_status or None,
         "bridge_resume_signal_status": execution.get("ccswitch_bridge_resume_signal_status") if execution else None,

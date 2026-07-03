@@ -105,6 +105,36 @@
                   <span id="frameworkTags" class="tag-group"></span>
                 </div>
                 <p class="inline-note">建议每次开始任务前先扫描一次，保持索引和上下文是新的。</p>
+                <div class="inspector-block">
+                  <div class="small-label">自动化预算策略</div>
+                  <div id="runtimePolicyCard" class="route-card">正在加载预算策略...</div>
+                </div>
+                <form id="runtimePolicyForm" class="stack-form slim">
+                  <label>
+                    <span>项目总预算</span>
+                    <input name="max_total_estimated_cost" type="number" min="0" step="0.000001" placeholder="留空表示不限制" />
+                  </label>
+                  <label>
+                    <span>单次执行上限</span>
+                    <input name="max_single_execution_cost" type="number" min="0" step="0.000001" placeholder="留空表示不限制" />
+                  </label>
+                  <label>
+                    <span>调度策略</span>
+                    <select name="dispatch_strategy">
+                      <option value="default">default</option>
+                      <option value="cheapest_first">cheapest_first</option>
+                    </select>
+                  </label>
+                  <label class="checkbox-label">
+                    <input name="block_on_unpriced_model" type="checkbox" />
+                    <span>未配置模型价格时阻止自动派发</span>
+                  </label>
+                  <label>
+                    <span>币种</span>
+                    <input name="cost_currency" placeholder="USD" />
+                  </label>
+                  <button type="submit" class="button secondary wide">保存预算策略</button>
+                </form>
               </div>
             </article>
 

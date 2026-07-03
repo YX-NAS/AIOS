@@ -13,6 +13,7 @@ const state = {
   planPreview: null,
   sessionSuggestions: [],
   selectedTaskId: null,
+  runtimePolicy: null,
 };
 
 const elements = {
@@ -28,6 +29,8 @@ const elements = {
   metricBlocked: document.getElementById("metricBlocked"),
   initEmptyState: document.getElementById("initEmptyState"),
   projectStatus: document.getElementById("projectStatus"),
+  runtimePolicyCard: document.getElementById("runtimePolicyCard"),
+  runtimePolicyForm: document.getElementById("runtimePolicyForm"),
   languageTags: document.getElementById("languageTags"),
   frameworkTags: document.getElementById("frameworkTags"),
   taskTableBody: document.getElementById("taskTableBody"),
@@ -117,6 +120,7 @@ async function copyText(text) {
 function renderStatus() {
   const status = state.status;
   const projectName = status.root.split(/[\\/]/).filter(Boolean).pop() || status.root;
+  state.runtimePolicy = status.runtime_policy || null;
   elements.rootPath.textContent = status.root;
   elements.projectBadge.textContent = projectName;
   elements.metricTasks.textContent = String(status.task_count);
@@ -150,6 +154,30 @@ function renderStatus() {
   elements.frameworkTags.innerHTML = (status.frameworks || [])
     .map((item) => `<span class="tag">${item}</span>`)
     .join("");
+  renderRuntimePolicy();
+}
+
+function renderRuntimePolicy() {
+  const policy = state.runtimePolicy;
+  if (!elements.runtimePolicyCard || !elements.runtimePolicyForm) return;
+  if (!policy) {
+    elements.runtimePolicyCard.innerHTML = `<strong>暂无预算策略</strong>`;
+    return;
+  }
+  const currency = policy.cost_currency || "USD";
+  elements.runtimePolicyCard.innerHTML = `
+    <strong>${policy.dispatch_strategy || "default"}</strong>
+    <div class="muted">项目总预算：${policy.max_total_estimated_cost != null ? `${policy.max_total_estimated_cost} ${currency}` : "-"}</div>
+    <div class="muted">单次执行上限：${policy.max_single_execution_cost != null ? `${policy.max_single_execution_cost} ${currency}` : "-"}</div>
+    <div class="muted">累计已用：${policy.spent_total_estimated_cost != null ? `${policy.spent_total_estimated_cost} ${currency}` : "-"}</div>
+    <div class="muted">剩余预算：${policy.remaining_total_budget != null ? `${policy.remaining_total_budget} ${currency}` : "-"}</div>
+    <div class="muted">未定价阻塞：${policy.block_on_unpriced_model ? "开启" : "关闭"}</div>
+  `;
+  elements.runtimePolicyForm.querySelector('input[name="max_total_estimated_cost"]').value = policy.max_total_estimated_cost ?? "";
+  elements.runtimePolicyForm.querySelector('input[name="max_single_execution_cost"]').value = policy.max_single_execution_cost ?? "";
+  elements.runtimePolicyForm.querySelector('select[name="dispatch_strategy"]').value = policy.dispatch_strategy || "default";
+  elements.runtimePolicyForm.querySelector('input[name="block_on_unpriced_model"]').checked = Boolean(policy.block_on_unpriced_model);
+  elements.runtimePolicyForm.querySelector('input[name="cost_currency"]').value = policy.cost_currency || "USD";
 }
 
 function sortByLatest(items) {
@@ -441,6 +469,10 @@ function renderScheduler(task) {
     <strong>${item.scheduler_state}</strong>
     <div class="muted">下一步：${item.next_action || "-"}</div>
     <div class="muted">原因：${item.reason || "-"}</div>
+    <div class="muted">预算状态：${item.budget?.status || "-"}</div>
+    <div class="muted">预计 Prompt Token：${item.budget?.prompt_token_estimate ?? "-"}</div>
+    <div class="muted">预计成本：${item.budget?.estimated_total_cost != null ? `${item.budget.estimated_total_cost} ${item.budget.cost_currency || "USD"}` : "-"}</div>
+    <div class="muted">剩余项目预算：${item.budget?.remaining_total_budget != null ? `${item.budget.remaining_total_budget} ${item.budget.cost_currency || "USD"}` : "-"}</div>
     <div class="muted">Bridge 确认：${item.bridge_confirmation_status || "-"}</div>
     <div class="muted">Bridge 信号：${item.bridge_resume_signal_status || "-"}</div>
     <div class="muted">Pack 质量：${item.pack_quality || "-"}</div>
@@ -624,6 +656,28 @@ elements.goalPlanForm.addEventListener("submit", async (event) => {
     renderPlanPreview();
     setActivity(`已生成拆分草案 ${data.draft_id}，预览 ${data.tasks.length} 条任务，确认后才会创建。`);
   }, "目标拆分失败。");
+});
+
+elements.runtimePolicyForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const formElement = event.currentTarget;
+  await runAction(async () => {
+    const form = new FormData(formElement);
+    const data = await api("/api/runtime-policy", {
+      method: "POST",
+      body: JSON.stringify({
+        max_total_estimated_cost: form.get("max_total_estimated_cost") || null,
+        max_single_execution_cost: form.get("max_single_execution_cost") || null,
+        dispatch_strategy: form.get("dispatch_strategy"),
+        block_on_unpriced_model: form.get("block_on_unpriced_model") === "on",
+        cost_currency: form.get("cost_currency") || "USD",
+      }),
+    });
+    state.runtimePolicy = data.policy;
+    renderRuntimePolicy();
+    await refreshDashboard();
+    setActivity(`已更新预算策略。\n调度策略：${data.policy.dispatch_strategy}\n剩余预算：${data.policy.remaining_total_budget ?? "-"} ${data.policy.cost_currency || "USD"}`);
+  }, "保存预算策略失败。");
 });
 
 elements.packForm.addEventListener("submit", async (event) => {

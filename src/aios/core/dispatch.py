@@ -5,6 +5,7 @@ from pathlib import Path
 from aios.core.ccswitch import confirm_ccswitch_bridge
 from aios.core.executions import auto_finish_execution, retry_execution_after_verification_failure, run_executor_with_auto_finish
 from aios.core.executors import executor_summary, get_default_executor
+from aios.core.runtime_policy import load_runtime_policy
 from aios.core.scheduler import scheduler_summary
 
 
@@ -121,7 +122,7 @@ def auto_progress_next_step(
             "bridge_path": confirm_result["bridge_path"],
         }
 
-    candidate = next_dispatch_candidate(before["items"])
+    candidate = next_dispatch_candidate(root, before["items"])
     if candidate is None:
         default_executor = None
         try:
@@ -248,11 +249,21 @@ def auto_dispatch_next_task(
     )
 
 
-def next_dispatch_candidate(items: list[dict]) -> dict | None:
-    for item in items:
-        if item.get("scheduler_state") == "ready" and item.get("next_action") == "run_executor":
-            return item
-    return None
+def next_dispatch_candidate(root: Path, items: list[dict]) -> dict | None:
+    ready_items = [item for item in items if item.get("scheduler_state") == "ready" and item.get("next_action") == "run_executor"]
+    if not ready_items:
+        return None
+    strategy = load_runtime_policy(root).get("dispatch_strategy")
+    if strategy == "cheapest_first":
+        ready_items = sorted(
+            ready_items,
+            key=lambda item: (
+                item.get("budget", {}).get("estimated_total_cost") is None,
+                item.get("budget", {}).get("estimated_total_cost") or 0.0,
+                item.get("task_id") or "",
+            ),
+        )
+    return ready_items[0]
 
 
 def next_scheduler_item(summary: dict) -> dict | None:
@@ -271,7 +282,9 @@ def build_dispatch_block_reason(summary: dict) -> str:
         return "存在待确认的 bridge 切换任务，需先确认外部模型/会话切换结果。"
     if summary.get("active_count"):
         return "存在执行中的任务，暂不自动派发新任务。"
+    if any(item.get("next_action") == "adjust_budget" for item in summary.get("items", [])):
+        item = next((entry for entry in summary.get("items", []) if entry.get("next_action") == "adjust_budget"), None)
+        return item.get("reason") if item else "预算策略阻止了自动派发。"
     if summary.get("blocked_count"):
         return "当前没有可执行任务，仍有依赖或 Context Pack 告警阻塞。"
     return "当前没有可自动派发的任务。"
-

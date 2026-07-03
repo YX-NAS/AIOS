@@ -8,6 +8,7 @@ from aios.core.executions import execution_summary
 from aios.core.instance_manager import DEFAULT_HOST, instance_status, project_id_for_root, state_dir
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
+from aios.core.runtime_policy import runtime_policy_summary
 from aios.core.scheduler import scheduler_summary
 from aios.utils.json_utils import read_json, write_json
 from aios.utils.text import now_iso
@@ -111,6 +112,11 @@ def project_runtime_data(root: Path) -> dict:
             "scheduler_next_task_id": None,
             "scheduler_next_task_title": None,
             "scheduler_next_action": None,
+            "runtime_policy_dispatch_strategy": "default",
+            "runtime_policy_max_total_estimated_cost": None,
+            "runtime_policy_max_single_execution_cost": None,
+            "runtime_policy_block_on_unpriced_model": False,
+            "remaining_total_budget": None,
         }
     tasks_payload = read_json(aios_dir / "tasks.json", {"tasks": []})
     tasks = tasks_payload["tasks"]
@@ -124,6 +130,7 @@ def project_runtime_data(root: Path) -> dict:
         goals = [task.get("source_goal") for task in reversed(tasks) if task.get("source_goal")]
         latest_goal = goals[0] if goals else None
     schedule = scheduler_summary(root)
+    policy = runtime_policy_summary(root)
     return {
         "task_count": len(tasks),
         "open_tasks": len([task for task in tasks if task["status"] != "done"]),
@@ -146,6 +153,11 @@ def project_runtime_data(root: Path) -> dict:
         "scheduler_next_task_id": schedule["next_task_id"],
         "scheduler_next_task_title": schedule["next_task_title"],
         "scheduler_next_action": schedule["next_action"],
+        "runtime_policy_dispatch_strategy": policy["dispatch_strategy"],
+        "runtime_policy_max_total_estimated_cost": policy["max_total_estimated_cost"],
+        "runtime_policy_max_single_execution_cost": policy["max_single_execution_cost"],
+        "runtime_policy_block_on_unpriced_model": policy["block_on_unpriced_model"],
+        "remaining_total_budget": policy["remaining_total_budget"],
     }
 
 

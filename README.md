@@ -31,6 +31,7 @@ bridge 恢复信号自动确认方案见 [docs/P3_24_DESIGN.md](/Users/yaxun/Syn
 验证失败后的自动二次派发方案见 [docs/P3_28_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_28_DESIGN.md)。
 成本与执行统计方案见 [docs/P3_9_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_9_DESIGN.md)。
 Provider / 鉴权就绪探测方案见 [docs/P3_29_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_29_DESIGN.md)。
+预算阈值与调度策略方案见 [docs/P3_31_DESIGN.md](/Users/yaxun/SynologyDrive/日常工作/Github/AIOS/docs/P3_31_DESIGN.md)。
 
 ## MVP 边界
 
@@ -83,9 +84,11 @@ Provider / 鉴权就绪探测方案见 [docs/P3_29_DESIGN.md](/Users/yaxun/Synol
 - `aios executor doctor` 可检查执行器二进制与基础 healthcheck，避免自动派发到不可用 CLI
 - `aios model doctor` 可检查全局模型的 provider 配置和鉴权环境变量是否就绪
 - 全局模型库现在还能维护输入/输出单价，执行记录会按 Context Pack 和执行输出估算 token、成本与耗时
+- 单项目 Web UI 现在还能配置项目级预算策略，自动派发会在预算超限或模型未定价时主动停下
 - 执行器运行后可按规则自动提取 session 引用，减少一次人工挂接
 - 自动化仍然不会自己理解业务验收结论，`summary` 仍需由操作者或上层系统提供
 - 自动重试当前只做“一次受控 fallback 重试”，不会无限循环切模型
+- 现在还能按预算策略切换 `default / cheapest_first` 两种 ready 任务调度顺序
 
 ## 安装与运行
 

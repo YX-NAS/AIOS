@@ -39,6 +39,7 @@ from aios.core.models import model_summary
 from aios.core.paths import aios_path
 from aios.core.project import initialize_project
 from aios.core.router import log_routing, route_task
+from aios.core.runtime_policy import runtime_policy_summary, save_runtime_policy
 from aios.core.scanner import scan_project
 from aios.core.scheduler import scheduler_summary
 from aios.core.tasks import (
@@ -87,6 +88,10 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json({"tasks": load_tasks_safe(self.project_root)})
                 if parsed.path == "/api/scheduler":
                     return self._send_json(scheduler_summary(self.project_root))
+                if parsed.path == "/api/runtime-policy":
+                    if not aios_path(self.project_root).exists():
+                        return self._send_json({"policy": runtime_policy_empty()})
+                    return self._send_json({"policy": runtime_policy_summary(self.project_root)})
                 if parsed.path == "/api/task-plans":
                     return self._send_json({"drafts": list_plan_drafts(self.project_root)})
                 if parsed.path.startswith("/api/task-plans/"):
@@ -522,6 +527,23 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         },
                         status=HTTPStatus.CREATED,
                     )
+                if parsed.path == "/api/runtime-policy":
+                    policy = save_runtime_policy(
+                        self.project_root,
+                        {
+                            "max_total_estimated_cost": payload.get("max_total_estimated_cost"),
+                            "max_single_execution_cost": payload.get("max_single_execution_cost"),
+                            "block_on_unpriced_model": bool(payload.get("block_on_unpriced_model")),
+                            "dispatch_strategy": (payload.get("dispatch_strategy") or "default").strip() or "default",
+                            "cost_currency": (payload.get("cost_currency") or "USD").strip() or "USD",
+                        },
+                    )
+                    return self._send_json(
+                        {
+                            "message": "Runtime policy updated.",
+                            "policy": runtime_policy_summary(self.project_root) | {"updated_at": policy.get("updated_at")},
+                        }
+                    )
                 if parsed.path == "/api/run/finish":
                     summary = (payload.get("summary") or "").strip()
                     if not summary:
@@ -610,6 +632,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "provider_ready_count": model_summary()["provider_ready_count"],
                 "enabled_executor_count": executor_summary()["enabled_executor_count"],
                 "available_executor_count": executor_summary()["available_executor_count"],
+                "runtime_policy": runtime_policy_summary(self.project_root) if initialized else runtime_policy_empty(),
                 **(scheduler_summary(self.project_root) if initialized else scheduler_summary_empty()),
                 **(execution_summary(self.project_root) if initialized else execution_summary_empty()),
             }
@@ -688,7 +711,21 @@ def scheduler_summary_empty() -> dict:
         "next_task_id": None,
         "next_task_title": None,
         "next_action": None,
+        "dispatch_strategy": "default",
         "items": [],
+    }
+
+
+def runtime_policy_empty() -> dict:
+    return {
+        "max_total_estimated_cost": None,
+        "max_single_execution_cost": None,
+        "block_on_unpriced_model": False,
+        "dispatch_strategy": "default",
+        "cost_currency": "USD",
+        "updated_at": None,
+        "spent_total_estimated_cost": 0.0,
+        "remaining_total_budget": None,
     }
 
 

@@ -6,6 +6,7 @@ from urllib.request import urlopen
 
 import aios.core.ccswitch as ccswitch_core
 from aios.core.scheduler import scheduler_summary
+from aios.core.runtime_policy import save_runtime_policy
 from aios.core.webapp import start_web_server
 from aios.main import main
 from aios.core.models import create_model
@@ -146,3 +147,93 @@ def test_scheduler_api_is_visible_in_web_ui(tmp_path: Path) -> None:
         assert 'id="metricReady"' in urlopen(f"{handle.url}/").read().decode("utf-8")
     finally:
         handle.close()
+
+
+def test_scheduler_blocks_ready_task_when_budget_policy_is_exceeded(tmp_path: Path) -> None:
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "scan"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    save_runtime_policy(
+        tmp_path,
+        {
+            "max_total_estimated_cost": 0.000001,
+            "max_single_execution_cost": None,
+            "block_on_unpriced_model": True,
+            "dispatch_strategy": "default",
+            "cost_currency": "USD",
+        },
+    )
+
+    summary = scheduler_summary(tmp_path)
+    item = summary["items"][0]
+    assert item["scheduler_state"] == "blocked"
+    assert item["next_action"] == "adjust_budget"
+    assert "预算" in item["reason"]
+
+
+def test_scheduler_uses_cheapest_first_strategy_for_ready_tasks(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# docs\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "scan"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    main(["--root", str(tmp_path), "task", "create", "实现登录功能", "--priority", "high"])
+    save_runtime_policy(
+        tmp_path,
+        {
+            "max_total_estimated_cost": None,
+            "max_single_execution_cost": None,
+            "block_on_unpriced_model": False,
+            "dispatch_strategy": "cheapest_first",
+            "cost_currency": "USD",
+        },
+    )
+    create_model(
+        None,
+        "cheap-model",
+        "Cheap Model",
+        "openai",
+        True,
+        1,
+        ["documentation"],
+        "https://api.openai.com/v1",
+        None,
+        None,
+        None,
+        ["OPENAI_API_KEY"],
+        0.1,
+        0.2,
+        "USD",
+    )
+    create_model(
+        None,
+        "expensive-model",
+        "Expensive Model",
+        "openai",
+        True,
+        2,
+        ["bug_fix"],
+        "https://api.openai.com/v1",
+        None,
+        None,
+        None,
+        ["OPENAI_API_KEY"],
+        100.0,
+        200.0,
+        "USD",
+    )
+
+    tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"]
+    tasks[0]["recommended_model"] = "cheap-model"
+    tasks[1]["recommended_model"] = "expensive-model"
+    (tmp_path / ".aios" / "tasks.json").write_text(json.dumps({"tasks": tasks}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    summary = scheduler_summary(tmp_path)
+    assert summary["dispatch_strategy"] == "cheapest_first"
+    assert summary["next_task_id"] == tasks[0]["id"]

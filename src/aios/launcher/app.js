@@ -124,6 +124,7 @@ function renderProjects() {
             <div class="small-note">最近执行状态：${project.latest_execution_status || "-"} | 最近执行更新时间：${project.last_execution_updated_at || "-"}</div>
             <div class="small-note">累计 Token：${project.total_token_estimate || 0} | 平均执行时长：${formatDuration(project.average_duration_seconds)} | 最近执行时长：${formatDuration(project.latest_execution_duration_seconds)}</div>
             <div class="small-note">待复核：${project.review_pending_count || 0} | 执行失败：${project.failed_count || 0} | 下一步：${project.scheduler_next_action || "-"}</div>
+            <div class="small-note">调度策略：${project.runtime_policy_dispatch_strategy || "default"} | 剩余预算：${formatCost(project.remaining_total_budget, project.cost_currency)} | 单次上限：${formatCost(project.runtime_policy_max_single_execution_cost, project.cost_currency)}</div>
             <div class="small-note">下一条任务：${project.scheduler_next_task_title || "-"}</div>
           </div>
             <div class="project-actions">

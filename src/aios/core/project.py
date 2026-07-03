@@ -61,6 +61,21 @@ def initialize_project(root: Path, name: str, project_type: str, force: bool = F
         write_json(executions_json, {"executions": []})
         created.append(executions_json)
 
+    runtime_policy_json = path / "runtime-policy.json"
+    if force or not runtime_policy_json.exists():
+        write_json(
+            runtime_policy_json,
+            {
+                "max_total_estimated_cost": None,
+                "max_single_execution_cost": None,
+                "block_on_unpriced_model": False,
+                "dispatch_strategy": "default",
+                "cost_currency": "USD",
+                "updated_at": None,
+            },
+        )
+        created.append(runtime_policy_json)
+
     routing_json = path / "model-routing.json"
     if force or not routing_json.exists():
         write_json(routing_json, {"routing_rules": DEFAULT_ROUTING})

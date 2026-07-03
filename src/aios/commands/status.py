@@ -6,6 +6,7 @@ from pathlib import Path
 from aios.core.executions import execution_summary
 from aios.core.models import model_summary
 from aios.core.paths import require_aios
+from aios.core.runtime_policy import runtime_policy_summary
 from aios.core.tasks import load_tasks
 from aios.utils.json_utils import read_json
 
@@ -19,6 +20,7 @@ def run_status(root: Path, args: argparse.Namespace) -> None:
     tasks = load_tasks(root)
     file_index = read_json(aios_dir / "file-index.json", {})
     execution = execution_summary(root)
+    policy = runtime_policy_summary(root)
     models = model_summary()
     done = len([task for task in tasks if task["status"] == "done"])
     todo = len([task for task in tasks if task["status"] != "done"])
@@ -42,6 +44,15 @@ def run_status(root: Path, args: argparse.Namespace) -> None:
             f"avg={execution['average_duration_seconds']}s, "
             f"latest={execution['latest_execution_duration_seconds'] or '-'}s"
         )
+    print(
+        "Policy: "
+        f"strategy={policy['dispatch_strategy']}, "
+        f"budget_total={policy['max_total_estimated_cost'] if policy['max_total_estimated_cost'] is not None else '-'}, "
+        f"budget_single={policy['max_single_execution_cost'] if policy['max_single_execution_cost'] is not None else '-'}, "
+        f"block_unpriced={'yes' if policy['block_on_unpriced_model'] else 'no'}"
+    )
+    if policy.get("remaining_total_budget") is not None:
+        print(f"Budget remaining: {policy['remaining_total_budget']} {policy['cost_currency']}")
     print(
         "Providers: "
         f"{models['provider_ready_count']} ready / "

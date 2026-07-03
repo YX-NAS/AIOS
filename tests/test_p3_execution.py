@@ -1127,6 +1127,7 @@ def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -
     (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
     (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
     (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# docs\n", encoding="utf-8")
     main(["--root", str(tmp_path), "scan"])
     main(["--root", str(tmp_path), "task", "plan", "开发会员积分系统", "--priority", "high"])
     create_executor(
@@ -1150,6 +1151,83 @@ def test_run_auto_cli_dispatches_first_ready_task(tmp_path: Path, monkeypatch) -
     execution = executions[0]
     assert execution["task_title"] == "梳理系统范围与模块边界：会员积分系统"
     assert execution["status"] == "review_pending"
+
+
+def test_run_auto_cli_can_use_cheapest_first_strategy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    (tmp_path / ".aios" / "context.md").write_text("# 项目上下文\n\n正式背景。\n", encoding="utf-8")
+    (tmp_path / ".aios" / "architecture.md").write_text("# 架构说明\n\n正式架构。\n", encoding="utf-8")
+    (tmp_path / "service.py").write_text("print('ok')\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("# docs\n", encoding="utf-8")
+    main(["--root", str(tmp_path), "scan"])
+    main(["--root", str(tmp_path), "task", "create", "更新说明文档", "--priority", "medium"])
+    main(["--root", str(tmp_path), "task", "create", "修复登录报错", "--priority", "high"])
+    request_json_payload = {
+        "max_total_estimated_cost": None,
+        "max_single_execution_cost": None,
+        "block_on_unpriced_model": False,
+        "dispatch_strategy": "cheapest_first",
+        "cost_currency": "USD",
+    }
+    (tmp_path / ".aios" / "runtime-policy.json").write_text(json.dumps(request_json_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    create_model(
+        None,
+        "cheap-model-run",
+        "Cheap Model Run",
+        "openai",
+        True,
+        1,
+        ["documentation"],
+        "https://api.openai.com/v1",
+        None,
+        None,
+        None,
+        ["OPENAI_API_KEY"],
+        0.1,
+        0.2,
+        "USD",
+    )
+    create_model(
+        None,
+        "expensive-model-run",
+        "Expensive Model Run",
+        "openai",
+        True,
+        2,
+        ["bug_fix"],
+        "https://api.openai.com/v1",
+        None,
+        None,
+        None,
+        ["OPENAI_API_KEY"],
+        100.0,
+        200.0,
+        "USD",
+    )
+    tasks = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"]
+    tasks[0]["recommended_model"] = "cheap-model-run"
+    tasks[1]["recommended_model"] = "expensive-model-run"
+    (tmp_path / ".aios" / "tasks.json").write_text(json.dumps({"tasks": tasks}, ensure_ascii=False, indent=2), encoding="utf-8")
+    create_executor(
+        None,
+        "dispatch-cheap-cli",
+        label="Dispatch Cheap CLI",
+        kind="command",
+        enabled=True,
+        rank=1,
+        binary="python3",
+        args=["-c", "print('dispatch ok')", "{prompt}"],
+        timeout_seconds=30,
+        pass_model_as_flag=False,
+        env={},
+    )
+
+    assert main(["--root", str(tmp_path), "run", "auto", "--executor", "dispatch-cheap-cli"]) == 0
+
+    execution = load_executions(tmp_path)[0]
+    assert execution["task_title"] == "更新说明文档"
 
 
 def test_run_auto_cli_reports_unavailable_executor_pool(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -2027,6 +2105,7 @@ def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, caps
     assert "Providers:" in output
     assert "ready /" in output
     assert "Usage:" in output
+    assert "Policy:" in output
 
 
 def test_plan_draft_api_create_confirm_and_delete(tmp_path: Path) -> None:
