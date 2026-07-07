@@ -2,6 +2,8 @@ const state = {
   projects: [],
   models: [],
   modelTaskTypes: [],
+  workbench: null,
+  productionProjects: [],
 };
 
 const AUTO_REFRESH_MS = 5000;
@@ -9,6 +11,9 @@ let refreshTimer = null;
 
 const elements = {
   projectForm: document.getElementById("projectForm"),
+  projectRoot: document.getElementById("projectRoot"),
+  projectName: document.getElementById("projectName"),
+  pickFolderButton: document.getElementById("pickFolderButton"),
   projectList: document.getElementById("projectList"),
   activityLog: document.getElementById("activityLog"),
   modelCreateForm: document.getElementById("modelCreateForm"),
@@ -16,6 +21,9 @@ const elements = {
   refreshButton: document.getElementById("refreshButton"),
   refreshMeta: document.getElementById("refreshMeta"),
   modelList: document.getElementById("modelList"),
+  workbenchStats: document.getElementById("workbenchStats"),
+  todayFocus: document.getElementById("todayFocus"),
+  productionProjectList: document.getElementById("productionProjectList"),
 };
 
 async function api(path, options = {}) {
@@ -56,10 +64,13 @@ function renderProjects() {
       (project, index) => {
         const collapsed = shouldCollapse && index !== 0 ? "collapsed" : "";
         return `
-        <div class="project-card ${collapsed}" data-project-id="${project.project_id}">
+        <div class="project-card ${collapsed} health-${project.health_state || "unknown"}" data-project-id="${project.project_id}">
           <div class="project-card-header" data-toggle="expand">
             <div>
-              <div class="project-name">${project.name}</div>
+              <div class="project-name-row">
+                <div class="project-name">${project.name}</div>
+                <span class="health-pill ${project.health_state || "unknown"}">${project.health_label || "未知"}</span>
+              </div>
               <div class="project-root">${project.root}</div>
             </div>
             <div class="status-tag-row">
@@ -69,6 +80,7 @@ function renderProjects() {
             </div>
           </div>
           <div class="project-card-body">
+          <div class="health-reasons">${formatReasons(project.health_reasons)}</div>
           <div class="project-url">${project.url || "未启动"}</div>
           <div class="project-metrics">
             <div class="metric-tile">
@@ -102,6 +114,10 @@ function renderProjects() {
             <div class="metric-tile">
               <div class="metric-value">${project.active_execution_count}</div>
               <div class="metric-label">活跃执行</div>
+            </div>
+            <div class="metric-tile">
+              <div class="metric-value">${project.pending_takeover_count || 0}</div>
+              <div class="metric-label">待接管</div>
             </div>
             <div class="metric-tile">
               <div class="metric-value">${formatCost(project.total_estimated_cost, project.cost_currency)}</div>
@@ -152,15 +168,7 @@ function renderProjects() {
 
   document.querySelectorAll(".open-project-button").forEach((button) => {
     button.addEventListener("click", async () => {
-      await runAction(async () => {
-        const data = await api("/api/projects/open", {
-          method: "POST",
-          body: JSON.stringify({ project_id: button.dataset.projectId }),
-        });
-        await refreshProjects();
-        setActivity(`已打开项目：${data.project.name}\n${data.url}`);
-        window.open(data.url, "_blank", "noopener");
-      }, "打开项目失败。");
+      await openProject(button.dataset.projectId);
     });
   });
 
@@ -197,6 +205,118 @@ function renderProjects() {
         await refreshProjects();
         setActivity(`已停止项目：${data.project.name}`);
       }, "停止项目失败。");
+    });
+  });
+}
+
+async function openProject(projectId) {
+  await runAction(async () => {
+    const data = await api("/api/projects/open", {
+      method: "POST",
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    await refreshAll();
+    setActivity(`已打开项目：${data.project.name}\n${data.url}`);
+    window.open(data.url, "_blank", "noopener");
+  }, "打开项目失败。");
+}
+
+function renderWorkbench() {
+  const workbench = state.workbench || {};
+  const statItems = [
+    ["项目", workbench.project_count || 0],
+    ["生产接入", `${workbench.registered_production_count || 0}/${workbench.production_candidate_count || 0}`],
+    ["今日任务", workbench.today_open_task_count || 0],
+    ["可执行", workbench.ready_task_count || 0],
+    ["阻塞", workbench.blocked_task_count || 0],
+    ["失败", workbench.failed_task_count || 0],
+    ["执行中", workbench.active_execution_count || 0],
+    ["待接管", workbench.pending_takeover_count || 0],
+  ];
+  elements.workbenchStats.innerHTML = statItems
+    .map(
+      ([label, value]) => `
+        <div class="workbench-stat">
+          <div class="workbench-stat-value">${value}</div>
+          <div class="workbench-stat-label">${label}</div>
+        </div>
+      `,
+    )
+    .join("");
+
+  const focusProjects = workbench.focus_projects || [];
+  if (!focusProjects.length) {
+    elements.todayFocus.innerHTML = `<div class="empty-state compact-empty">暂无项目状态。先接入一个真实项目。</div>`;
+    return;
+  }
+  elements.todayFocus.innerHTML = `
+    <div class="focus-title">今日优先查看</div>
+    ${focusProjects
+      .map(
+        (project) => `
+          <div class="focus-item">
+            <div>
+              <div class="focus-name">${project.name}</div>
+              <div class="focus-meta">${project.scheduler_next_task_title || project.latest_task_title || "暂无下一条任务"}</div>
+            </div>
+            <div class="focus-right">
+              <span class="health-pill ${project.health_state || "unknown"}">${project.health_label || "未知"}</span>
+              <span class="focus-count">${project.ready_count || 0} 可执行</span>
+            </div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
+}
+
+function renderProductionProjects() {
+  if (!state.productionProjects.length) {
+    elements.productionProjectList.innerHTML = `<div class="empty-state compact-empty">暂无生产项目候选。</div>`;
+    return;
+  }
+  elements.productionProjectList.innerHTML = state.productionProjects
+    .map(
+      (item) => `
+        <div class="production-item">
+          <div class="production-main">
+            <div class="production-title-row">
+              <div class="production-name">${item.name}</div>
+              <span class="priority-pill">${item.priority}</span>
+              <span class="health-pill ${item.health_state || "unknown"}">${item.health_label || "未知"}</span>
+            </div>
+            <div class="production-role">${item.role}</div>
+            <div class="project-root">${item.root}</div>
+            <div class="production-meta">${item.registered ? "已登记" : item.exists ? "可接入" : "目录未找到"} · ${item.initialized ? "已初始化" : "未初始化"} · ${item.open_tasks || 0} 未完成 · ${item.ready_count || 0} 可执行</div>
+          </div>
+          <div class="production-actions">
+            ${
+              item.registered
+                ? `<button type="button" class="button secondary open-production-button" data-project-id="${item.project_id}">打开</button>`
+                : `<button type="button" class="button primary register-production-button" data-root="${item.root}" data-name="${item.name}" ${item.exists ? "" : "disabled"}>接入</button>`
+            }
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+
+  document.querySelectorAll(".register-production-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await runAction(async () => {
+        const data = await api("/api/projects", {
+          method: "POST",
+          body: JSON.stringify({ root: button.dataset.root, name: button.dataset.name }),
+        });
+        await refreshAll();
+        setActivity(`已接入生产项目：${data.project.name}`);
+      }, "接入生产项目失败。");
+    });
+  });
+
+  document.querySelectorAll(".open-production-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await openProject(button.dataset.projectId);
     });
   });
 }
@@ -347,6 +467,15 @@ function parseCommaList(value) {
     .filter(Boolean);
 }
 
+function inferProjectNameFromRoot(root) {
+  const parts = String(root || "")
+    .trim()
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
+}
+
 function renderRuntimeBadge(runtime) {
   const data = runtime || {};
   const ready = Boolean(data.ready);
@@ -386,6 +515,11 @@ function renderRuntimeBadge(runtime) {
 
 function formatList(items) {
   return items && items.length ? items.join(", ") : "未识别";
+}
+
+function formatReasons(items) {
+  const reasons = Array.isArray(items) && items.length ? items : ["暂无状态说明"];
+  return reasons.map((item) => `<span>${item}</span>`).join("");
 }
 
 function formatCost(amount, currency) {
@@ -429,8 +563,16 @@ async function refreshModels() {
   renderModels();
 }
 
+async function refreshWorkbench() {
+  const data = await api("/api/workbench");
+  state.workbench = data.workbench;
+  state.productionProjects = data.workbench.production_projects || [];
+  renderWorkbench();
+  renderProductionProjects();
+}
+
 async function refreshAll() {
-  await Promise.all([refreshProjects(), refreshModels()]);
+  await Promise.all([refreshProjects(), refreshModels(), refreshWorkbench()]);
 }
 
 elements.projectForm.addEventListener("submit", async (event) => {
@@ -447,6 +589,24 @@ elements.projectForm.addEventListener("submit", async (event) => {
     await refreshAll();
     setActivity(`已添加项目：${data.project.name}`);
   }, "添加项目失败。");
+});
+
+elements.pickFolderButton.addEventListener("click", async () => {
+  await runAction(async () => {
+    const data = await api("/api/projects/pick-folder", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (!data.root) {
+      setActivity("已取消选择文件夹。");
+      return;
+    }
+    elements.projectRoot.value = data.root;
+    if (!String(elements.projectName.value || "").trim()) {
+      elements.projectName.value = inferProjectNameFromRoot(data.root);
+    }
+    setActivity(`已选择项目目录：${data.root}`);
+  }, "打开文件夹选择器失败。");
 });
 
 elements.modelCreateForm.addEventListener("submit", async (event) => {

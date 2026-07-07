@@ -117,6 +117,26 @@ def test_launcher_api_manages_multiple_projects(tmp_path: Path, monkeypatch) -> 
         handle.close()
 
 
+def test_launcher_folder_picker_api_returns_selected_root(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    selected_root = tmp_path / "picked-project"
+    selected_root.mkdir()
+    monkeypatch.setattr("aios.core.launcher.pick_project_directory", lambda: str(selected_root))
+
+    handle = start_launcher_server(port=0)
+    try:
+        status_code, payload = request_json(
+            handle.url,
+            "/api/projects/pick-folder",
+            method="POST",
+            payload={},
+        )
+        assert status_code == 200
+        assert payload["root"] == str(selected_root)
+    finally:
+        handle.close()
+
+
 def test_launcher_project_summary_reflects_project_data_and_scan(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
@@ -157,8 +177,54 @@ def test_launcher_project_summary_reflects_project_data_and_scan(tmp_path: Path,
         assert status_payload["project"]["name"] == "Alpha"
         assert status_payload["project"]["initialized"] is True
         assert status_payload["project"]["task_count"] == 1
+        assert status_payload["project"]["health_state"] in {"attention", "healthy"}
+        assert status_payload["project"]["health_label"]
+        assert status_payload["project"]["today_open_tasks"] == 1
     finally:
         stop_project_instance(project_id_for_root(project))
+        handle.close()
+
+
+def test_launcher_workbench_summary_and_production_project_checklist(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    fake_home = tmp_path / "home"
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    production_root = fake_home / "SynologyDrive" / "日常工作" / "Github" / "AIOS"
+    production_root.mkdir(parents=True)
+    main(["--root", str(production_root), "init", "--name", "AIOS", "--type", "tool"])
+    main(["--root", str(production_root), "task", "create", "完善今日工作台", "--priority", "high"])
+
+    handle = start_launcher_server(port=0)
+    try:
+        status_code, created_payload = request_json(
+            handle.url,
+            "/api/projects",
+            method="POST",
+            payload={"root": str(production_root), "name": "AIOS"},
+        )
+        assert status_code == 201
+        assert created_payload["project"]["health_label"]
+
+        status_code, workbench_payload = request_json(handle.url, "/api/workbench")
+        assert status_code == 200
+        workbench = workbench_payload["workbench"]
+        assert workbench["project_count"] == 1
+        assert workbench["registered_production_count"] == 1
+        assert workbench["production_candidate_count"] >= 5
+        assert workbench["open_task_count"] == 1
+        assert workbench["today_open_task_count"] == 1
+        assert workbench["focus_projects"][0]["name"] == "AIOS"
+
+        status_code, checklist_payload = request_json(handle.url, "/api/production-projects")
+        assert status_code == 200
+        aios_item = next(item for item in checklist_payload["projects"] if item["key"] == "aios")
+        assert aios_item["exists"] is True
+        assert aios_item["registered"] is True
+        assert aios_item["initialized"] is True
+        assert aios_item["open_tasks"] == 1
+    finally:
+        stop_project_instance(project_id_for_root(production_root))
         handle.close()
 
 

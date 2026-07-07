@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>AIOS Launcher</title>
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/assets/app.css" />
   </head>
   <body>
@@ -11,14 +12,37 @@
       <header class="launcher-hero">
         <div>
           <div class="launcher-eyebrow">AI Development Operating System</div>
-          <h1>多项目启动器</h1>
-          <p>先登记项目，再启动或打开对应项目工作区。每个项目继续保持独立的 `.aios/` 状态。</p>
+          <h1>今日工作台</h1>
+          <p>从这里确认今日重点、接入真实项目、查看健康状态，再进入项目工作区执行。</p>
         </div>
         <div class="hero-actions">
           <div id="refreshMeta" class="small-note">自动刷新：开启</div>
           <button id="refreshButton" class="button secondary">刷新状态</button>
         </div>
       </header>
+
+      <section class="workbench-grid">
+        <article class="panel command-panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">今日总览</div>
+              <div class="panel-subtitle">项目、任务、阻塞和执行状态</div>
+            </div>
+          </div>
+          <div id="workbenchStats" class="workbench-stats"></div>
+          <div id="todayFocus" class="today-focus"></div>
+        </article>
+
+        <article class="panel command-panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">真实项目接入清单</div>
+              <div class="panel-subtitle">生产主线项目，一键登记到 AIOS</div>
+            </div>
+          </div>
+          <div id="productionProjectList" class="production-list"></div>
+        </article>
+      </section>
 
       <section class="launcher-grid">
         <article class="panel">
@@ -31,7 +55,11 @@
           <form id="projectForm" class="stack-form">
             <label>
               <span>项目目录</span>
-              <input id="projectRoot" name="root" placeholder="/Users/you/path/to/project" required />
+              <div class="input-action-row">
+                <input id="projectRoot" name="root" placeholder="/Users/you/path/to/project" required />
+                <button id="pickFolderButton" type="button" class="button secondary folder-pick-button">选择文件夹</button>
+              </div>
+              <div class="small-note">支持两种方式：直接填写绝对路径，或用系统文件夹选择器选取项目目录。</div>
             </label>
             <label>
               <span>显示名称</span>
@@ -44,8 +72,8 @@
         <article class="panel">
           <div class="panel-header">
             <div>
-              <div class="panel-title">项目列表</div>
-              <div class="panel-subtitle">启动、停止、打开项目工作区</div>
+              <div class="panel-title">项目健康摘要</div>
+              <div class="panel-subtitle">先看健康、阻塞和下一步，再打开项目</div>
             </div>
           </div>
           <div id="projectList" class="project-list"></div>

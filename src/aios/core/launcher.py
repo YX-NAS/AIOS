@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -12,11 +14,51 @@ from urllib.parse import urlparse
 from aios.core.instance_manager import DEFAULT_HOST, start_project_instance, stop_project_instance
 from aios.core.models import create_model, delete_model, model_summary, probe_models, reset_model_library, update_model
 from aios.core.scanner import scan_project
-from aios.core.projects import get_project, list_project_summaries, project_summary, register_project, update_project
+from aios.core.projects import (
+    get_project,
+    launcher_workbench_summary,
+    list_project_summaries,
+    production_project_candidates,
+    project_summary,
+    register_project,
+    update_project,
+)
 from aios.utils.text import now_iso
 
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "launcher"
+
+
+def pick_project_directory() -> str | None:
+    if sys.platform == "darwin":
+        command = [
+            "osascript",
+            "-e",
+            'POSIX path of (choose folder with prompt "选择要接入 AIOS 的项目目录")',
+        ]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            stderr = (completed.stderr or "").strip().lower()
+            stdout = (completed.stdout or "").strip().lower()
+            cancelled_tokens = ("cancel", "canceled", "user canceled", "execution error")
+            if any(token in stderr for token in cancelled_tokens) or any(token in stdout for token in cancelled_tokens):
+                return None
+            message = (completed.stderr or completed.stdout or "Failed to pick project directory").strip()
+            raise RuntimeError(message)
+        return (completed.stdout or "").strip() or None
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        selected = filedialog.askdirectory(title="选择要接入 AIOS 的项目目录")
+        root.destroy()
+        return selected or None
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"Folder picker is not available on this platform: {exc}") from exc
 
 
 @dataclass
@@ -42,6 +84,10 @@ def start_launcher_server(host: str = DEFAULT_HOST, port: int = 8755) -> Launche
                     return self._serve_asset(parsed.path.removeprefix("/assets/"))
                 if parsed.path == "/api/projects":
                     return self._send_json({"projects": list_project_summaries()})
+                if parsed.path == "/api/workbench":
+                    return self._send_json({"workbench": launcher_workbench_summary()})
+                if parsed.path == "/api/production-projects":
+                    return self._send_json({"projects": production_project_candidates()})
                 if parsed.path == "/api/models":
                     return self._send_json(model_summary())
                 if parsed.path.startswith("/api/projects/") and parsed.path.endswith("/status"):
@@ -61,6 +107,9 @@ def start_launcher_server(host: str = DEFAULT_HOST, port: int = 8755) -> Launche
                         raise ValueError("Project root is required.")
                     project = register_project(Path(root), (payload.get("name") or "").strip() or None)
                     return self._send_json({"project": project_summary(project)}, status=HTTPStatus.CREATED)
+                if parsed.path == "/api/projects/pick-folder":
+                    root = pick_project_directory()
+                    return self._send_json({"root": root})
                 if parsed.path == "/api/models/update":
                     current_model_id = (payload.get("current_model_id") or payload.get("model_id") or "").strip()
                     model_id = (payload.get("model_id") or "").strip()

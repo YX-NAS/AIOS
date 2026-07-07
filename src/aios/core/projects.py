@@ -10,10 +10,56 @@ from aios.core.models import model_summary
 from aios.core.paths import aios_path
 from aios.core.runtime_policy import runtime_policy_summary
 from aios.core.scheduler import scheduler_summary
+from aios.core.takeover import pending_takeover_count
 from aios.utils.json_utils import read_json, write_json
-from aios.utils.text import now_iso
+from aios.utils.text import now_iso, today
 
 PROJECTS_LOCK = threading.Lock()
+
+PRODUCTION_PROJECTS = [
+    {
+        "key": "xiazhi-ai",
+        "name": "夏栀 AI",
+        "path_parts": ("SynologyDrive", "日常工作", "Github", "xiazhi-ai.git"),
+        "role": "第一产品主线",
+        "priority": "P0",
+    },
+    {
+        "key": "aios",
+        "name": "AIOS",
+        "path_parts": ("SynologyDrive", "日常工作", "Github", "AIOS"),
+        "role": "第一生产力与系统管理核心",
+        "priority": "P0",
+    },
+    {
+        "key": "codex-deepseek-lifeline",
+        "name": "codex-deepseek-lifeline",
+        "path_parts": ("SynologyDrive", "日常工作", "Github", "codex-deepseek-lifeline"),
+        "role": "Codex 续航与模型切换工具",
+        "priority": "P1",
+    },
+    {
+        "key": "ecosystem-hub",
+        "name": "ecosystem-hub",
+        "path_parts": ("SynologyDrive", "日常工作", "Github", "ecosystem-hub"),
+        "role": "系统资产与监控总账",
+        "priority": "P1",
+    },
+    {
+        "key": "api-router",
+        "name": "API_Router",
+        "path_parts": ("SynologyDrive", "日常工作", "Github", "API_Router"),
+        "role": "API、模型和服务路由底座",
+        "priority": "P1",
+    },
+    {
+        "key": "wxautomation",
+        "name": "wxautomation",
+        "path_parts": ("SynologyDrive", "日常工作", "Github", "VR", "wxautomation"),
+        "role": "内容与微信自动化生产线",
+        "priority": "P2",
+    },
+]
 
 
 def projects_registry_path() -> Path:
@@ -121,6 +167,11 @@ def project_runtime_data(root: Path) -> dict:
             "runtime_policy_max_single_execution_cost": None,
             "runtime_policy_block_on_unpriced_model": False,
             "remaining_total_budget": None,
+            "today_open_tasks": 0,
+            "pending_takeover_count": 0,
+            "health_state": "setup",
+            "health_label": "待接入",
+            "health_reasons": ["项目尚未初始化 AIOS"],
         }
     tasks_payload = read_json(aios_dir / "tasks.json", {"tasks": []})
     tasks = tasks_payload["tasks"]
@@ -136,6 +187,33 @@ def project_runtime_data(root: Path) -> dict:
     schedule = scheduler_summary(root)
     policy = runtime_policy_summary(root)
     models = model_summary(root)
+    executors = executor_summary(root)
+    takeover_count = pending_takeover_count(root)
+    today_prefix = today()
+    today_open_tasks = len(
+        [
+            task
+            for task in tasks
+            if task.get("status") != "done"
+            and str(task.get("updated_at") or task.get("created_at") or "").startswith(today_prefix)
+        ]
+    )
+    execution_data = execution_summary(root)
+    health = project_health(
+        {
+            "root_exists": True,
+            "initialized": True,
+            "file_count": file_summary.get("file_count", 0),
+            "open_tasks": len([task for task in tasks if task["status"] != "done"]),
+            "active_execution_count": execution_data["active_execution_count"],
+            "ready_count": schedule["ready_count"],
+            "blocked_count": schedule["blocked_count"],
+            "failed_count": schedule["failed_count"],
+            "pending_takeover_count": takeover_count,
+            "provider_ready_count": models["provider_ready_count"],
+            "available_executor_count": executors["available_executor_count"],
+        }
+    )
     return {
         "task_count": len(tasks),
         "open_tasks": len([task for task in tasks if task["status"] != "done"]),
@@ -147,13 +225,13 @@ def project_runtime_data(root: Path) -> dict:
         "provider_handshake_failed_count": models["provider_handshake_failed_count"],
         "provider_api_verified_count": models["provider_api_verified_count"],
         "provider_api_failed_count": models["provider_api_failed_count"],
-        "available_executor_count": executor_summary(root)["available_executor_count"],
+        "available_executor_count": executors["available_executor_count"],
         "languages": file_summary.get("languages", []),
         "frameworks": file_summary.get("frameworks", []),
         "latest_task_title": latest_task.get("title") if latest_task else None,
         "latest_goal": latest_goal,
         "last_task_updated_at": latest_task.get("updated_at") if latest_task else None,
-        **execution_summary(root),
+        **execution_data,
         "ready_count": schedule["ready_count"],
         "blocked_count": schedule["blocked_count"],
         "bridge_pending_count": schedule["bridge_pending_count"],
@@ -167,6 +245,9 @@ def project_runtime_data(root: Path) -> dict:
         "runtime_policy_max_single_execution_cost": policy["max_single_execution_cost"],
         "runtime_policy_block_on_unpriced_model": policy["block_on_unpriced_model"],
         "remaining_total_budget": policy["remaining_total_budget"],
+        "today_open_tasks": today_open_tasks,
+        "pending_takeover_count": takeover_count,
+        **health,
     }
 
 
@@ -175,6 +256,24 @@ def project_summary(project: dict, host: str = DEFAULT_HOST) -> dict:
     runtime = instance_status(root, project["project_id"], host)
     initialized = aios_path(root).exists() if root.exists() else False
     runtime_data = project_runtime_data(root) if root.exists() else project_runtime_data(Path("/__missing__"))
+    if not root.exists():
+        runtime_data.update(
+            project_health(
+                {
+                    "root_exists": False,
+                    "initialized": False,
+                    "file_count": 0,
+                    "open_tasks": 0,
+                    "active_execution_count": 0,
+                    "ready_count": 0,
+                    "blocked_count": 0,
+                    "failed_count": 0,
+                    "pending_takeover_count": 0,
+                    "provider_ready_count": 0,
+                    "available_executor_count": 0,
+                }
+            )
+        )
     summary = {
         **project,
         "initialized": initialized,
@@ -191,3 +290,120 @@ def project_summary(project: dict, host: str = DEFAULT_HOST) -> dict:
 
 def list_project_summaries(host: str = DEFAULT_HOST) -> list[dict]:
     return [project_summary(project, host) for project in load_projects()]
+
+
+def project_health(data: dict) -> dict:
+    reasons: list[str] = []
+    state = "healthy"
+    label = "可生产"
+    if not data.get("root_exists", True):
+        return {
+            "health_state": "broken",
+            "health_label": "路径失效",
+            "health_reasons": ["项目目录不存在"],
+        }
+    if not data.get("initialized"):
+        state = "setup"
+        label = "待初始化"
+        reasons.append("尚未初始化 .aios")
+    if data.get("pending_takeover_count", 0) > 0:
+        state = "blocked"
+        label = "需接管"
+        reasons.append(f"{data['pending_takeover_count']} 个接管项")
+    elif data.get("failed_count", 0) > 0:
+        state = "blocked"
+        label = "有失败"
+        reasons.append(f"{data['failed_count']} 个失败任务")
+    elif data.get("blocked_count", 0) > 0:
+        state = "attention"
+        label = "有阻塞"
+        reasons.append(f"{data['blocked_count']} 个阻塞任务")
+    if data.get("active_execution_count", 0) > 0:
+        if state == "healthy":
+            state = "active"
+            label = "执行中"
+        reasons.append(f"{data['active_execution_count']} 个执行中")
+    if data.get("file_count", 0) == 0 and data.get("initialized"):
+        if state == "healthy":
+            state = "attention"
+            label = "需扫描"
+        reasons.append("尚无扫描索引")
+    if data.get("open_tasks", 0) == 0 and data.get("initialized"):
+        reasons.append("暂无未完成任务")
+    if data.get("provider_ready_count", 0) == 0 and data.get("initialized"):
+        if state in {"healthy", "active"}:
+            state = "attention"
+            label = "模型待检"
+        reasons.append("暂无就绪模型")
+    if data.get("available_executor_count", 0) == 0 and data.get("initialized"):
+        if state in {"healthy", "active"}:
+            state = "attention"
+            label = "执行器待检"
+        reasons.append("暂无可用执行器")
+    return {
+        "health_state": state,
+        "health_label": label,
+        "health_reasons": reasons[:4] or ["状态正常"],
+    }
+
+
+def production_project_candidates() -> list[dict]:
+    registered_by_root = {project["root"]: project for project in load_projects()}
+    candidates = []
+    for item in PRODUCTION_PROJECTS:
+        root = Path.home().joinpath(*item["path_parts"]).resolve()
+        registered = registered_by_root.get(str(root))
+        summary = project_summary(registered) if registered else None
+        candidates.append(
+            {
+                **item,
+                "root": str(root),
+                "exists": root.exists(),
+                "registered": registered is not None,
+                "initialized": bool(summary["initialized"]) if summary else aios_path(root).exists(),
+                "project_id": registered["project_id"] if registered else None,
+                "health_state": summary["health_state"] if summary else ("setup" if root.exists() else "missing"),
+                "health_label": summary["health_label"] if summary else ("待登记" if root.exists() else "未找到"),
+                "open_tasks": summary["open_tasks"] if summary else 0,
+                "ready_count": summary["ready_count"] if summary else 0,
+            }
+        )
+    return candidates
+
+
+def launcher_workbench_summary(host: str = DEFAULT_HOST) -> dict:
+    projects = list_project_summaries(host)
+    candidates = production_project_candidates()
+    health_counts: dict[str, int] = {}
+    for project in projects:
+        key = project.get("health_state") or "unknown"
+        health_counts[key] = health_counts.get(key, 0) + 1
+    focus_projects = sorted(
+        projects,
+        key=lambda project: (
+            -(project.get("pending_takeover_count") or 0),
+            -(project.get("failed_count") or 0),
+            -(project.get("blocked_count") or 0),
+            -(project.get("active_execution_count") or 0),
+            -(project.get("ready_count") or 0),
+            -(project.get("today_open_tasks") or 0),
+        ),
+    )[:5]
+    return {
+        "generated_at": now_iso(),
+        "project_count": len(projects),
+        "registered_production_count": len([item for item in candidates if item["registered"]]),
+        "production_candidate_count": len(candidates),
+        "initialized_project_count": len([project for project in projects if project.get("initialized")]),
+        "running_project_count": len([project for project in projects if project.get("running")]),
+        "open_task_count": sum(int(project.get("open_tasks") or 0) for project in projects),
+        "today_open_task_count": sum(int(project.get("today_open_tasks") or 0) for project in projects),
+        "ready_task_count": sum(int(project.get("ready_count") or 0) for project in projects),
+        "blocked_task_count": sum(int(project.get("blocked_count") or 0) for project in projects),
+        "failed_task_count": sum(int(project.get("failed_count") or 0) for project in projects),
+        "active_execution_count": sum(int(project.get("active_execution_count") or 0) for project in projects),
+        "pending_takeover_count": sum(int(project.get("pending_takeover_count") or 0) for project in projects),
+        "health_counts": health_counts,
+        "focus_projects": focus_projects,
+        "production_projects": candidates,
+    }
