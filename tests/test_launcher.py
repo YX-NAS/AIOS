@@ -11,6 +11,8 @@ from aios.core.instance_manager import project_id_for_root, stop_project_instanc
 from aios.core.models import load_model_library
 from aios.core.launcher import start_launcher_server
 from aios.core.projects import load_projects, register_project
+from aios.core.takeover import enqueue_takeover
+from aios.core.tasks import create_task, set_task_status
 from aios.main import main
 
 
@@ -225,6 +227,44 @@ def test_launcher_workbench_summary_and_production_project_checklist(tmp_path: P
         assert aios_item["open_tasks"] == 1
     finally:
         stop_project_instance(project_id_for_root(production_root))
+        handle.close()
+
+
+def test_launcher_workbench_exposes_actionable_sections(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    project = tmp_path / "workspace" / "control-tower"
+    project.mkdir(parents=True)
+    main(["--root", str(project), "init", "--name", "control-tower", "--type", "tool"])
+    ready_task = create_task(project, "准备可执行任务", "high")
+    running_task = create_task(project, "处理中任务", "medium")
+    set_task_status(project, running_task["id"], "running")
+    enqueue_takeover(project, ready_task["id"], "Provider 鉴权失败，需要人工处理。", failure_category="provider_auth_blocked")
+
+    handle = start_launcher_server(port=0)
+    try:
+        status_code, created_payload = request_json(
+            handle.url,
+            "/api/projects",
+            method="POST",
+            payload={"root": str(project), "name": "Control Tower"},
+        )
+        assert status_code == 201
+        assert created_payload["project"]["health_label"]
+
+        status_code, workbench_payload = request_json(handle.url, "/api/workbench")
+        assert status_code == 200
+        workbench = workbench_payload["workbench"]
+        assert workbench["actionable_ready"]
+        assert workbench["actionable_ready"][0]["task_title"] == "准备可执行任务"
+        assert workbench["pending_takeovers"]
+        assert workbench["pending_takeovers"][0]["task_id"] == ready_task["id"]
+        assert workbench["active_runs"]
+        assert workbench["active_runs"][0]["task_id"] == running_task["id"]
+        assert workbench["infra_summary"]["alerts"]
+        assert workbench["recent_activity"]
+    finally:
+        stop_project_instance(project_id_for_root(project))
         handle.close()
 
 

@@ -24,6 +24,12 @@ const elements = {
   workbenchStats: document.getElementById("workbenchStats"),
   todayFocus: document.getElementById("todayFocus"),
   productionProjectList: document.getElementById("productionProjectList"),
+  readyQueue: document.getElementById("readyQueue"),
+  takeoverQueue: document.getElementById("takeoverQueue"),
+  reviewQueue: document.getElementById("reviewQueue"),
+  activeRuns: document.getElementById("activeRuns"),
+  infraSummary: document.getElementById("infraSummary"),
+  recentActivity: document.getElementById("recentActivity"),
 };
 
 async function api(path, options = {}) {
@@ -268,6 +274,113 @@ function renderWorkbench() {
       )
       .join("")}
   `;
+
+  renderWorkbenchQueues(workbench);
+  renderInfraSummary(workbench.infra_summary || {});
+  renderRecentActivity(workbench.recent_activity || []);
+}
+
+function renderWorkbenchQueues(workbench) {
+  renderQueueList(elements.readyQueue, workbench.actionable_ready || [], {
+    empty: "暂无可直接执行的任务。",
+    meta: (item) => `${item.priority || "medium"} · ${item.recommended_model || item.planned_model || "待路由"} · ${item.next_action || "run_executor"}`,
+    detail: (item) => item.reason || "依赖已满足，可以开始执行。",
+    actionLabel: "进入项目",
+  });
+  renderQueueList(elements.takeoverQueue, workbench.pending_takeovers || [], {
+    empty: "暂无待接管项。",
+    meta: (item) => `${item.failure_category || "unknown"} · ${item.takeover_id || "-"}`,
+    detail: (item) => item.reason || item.suggested_action || "需要人工处理。",
+    actionLabel: "去处理",
+  });
+  renderQueueList(elements.reviewQueue, workbench.review_queue || [], {
+    empty: "暂无待验收任务。",
+    meta: (item) => `${item.priority || "medium"} · ${item.actual_model || item.planned_model || item.recommended_model || "-"}`,
+    detail: (item) => item.failure_summary || item.reason || "等待 review 与 finish。",
+    actionLabel: "去验收",
+  });
+  renderQueueList(elements.activeRuns, workbench.active_runs || [], {
+    empty: "当前没有执行中的任务。",
+    meta: (item) => `${item.actual_model || item.planned_model || item.recommended_model || "-"} · ${item.execution_status || item.task_status || "-"}`,
+    detail: (item) => item.reason || "任务正在执行或等待执行结果。",
+    actionLabel: "去查看",
+  });
+}
+
+function renderQueueList(container, items, config) {
+  if (!container) return;
+  if (!items.length) {
+    container.innerHTML = `<div class="empty-state compact-empty">${config.empty}</div>`;
+    return;
+  }
+  container.innerHTML = items
+    .map(
+      (item) => `
+        <div class="queue-item">
+          <div class="queue-main">
+            <div class="queue-title-row">
+              <div class="queue-title">${item.task_title || item.task_id || item.takeover_id || "未命名项"}</div>
+              <span class="health-pill ${item.project_health_state || "unknown"}">${item.project_name || "未知项目"}</span>
+            </div>
+            <div class="queue-meta">${config.meta(item)}</div>
+            <div class="queue-detail">${config.detail(item)}</div>
+            <div class="queue-foot">${item.updated_at || item.created_at || "-"}</div>
+          </div>
+          <div class="queue-actions">
+            <button type="button" class="button secondary workbench-open-button" data-project-id="${item.project_id}">${config.actionLabel}</button>
+          </div>
+        </div>
+      `,
+    )
+    .join("");
+
+  container.querySelectorAll(".workbench-open-button").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await openProject(button.dataset.projectId);
+    });
+  });
+}
+
+function renderInfraSummary(summary) {
+  if (!elements.infraSummary) return;
+  const alerts = summary.alerts || [];
+  if (!alerts.length) {
+    elements.infraSummary.innerHTML = `<div class="empty-state compact-empty">暂无基础设施摘要。</div>`;
+    return;
+  }
+  elements.infraSummary.innerHTML = alerts
+    .map(
+      (item) => `
+        <div class="infra-card level-${item.level || "info"}">
+          <div class="infra-value">${item.value || 0}</div>
+          <div class="infra-label">${item.label}</div>
+          <div class="infra-detail">${item.detail || ""}</div>
+        </div>
+      `,
+    )
+    .join("");
+}
+
+function renderRecentActivity(items) {
+  if (!elements.recentActivity) return;
+  if (!items.length) {
+    elements.recentActivity.innerHTML = `<div class="empty-state compact-empty">暂无最近活动。</div>`;
+    return;
+  }
+  elements.recentActivity.innerHTML = items
+    .map(
+      (item) => `
+        <div class="recent-item">
+          <div class="recent-top">
+            <span class="recent-kind">${activityKindLabel(item.kind)}</span>
+            <span class="recent-time">${item.happened_at || "-"}</span>
+          </div>
+          <div class="recent-title">${item.project_name || "未知项目"} · ${item.title || "最近更新"}</div>
+          <div class="recent-detail">${item.detail || "-"}</div>
+        </div>
+      `,
+    )
+    .join("");
 }
 
 function renderProductionProjects() {
@@ -458,6 +571,16 @@ function statusLabel(status) {
     return "路径失效";
   }
   return "未运行";
+}
+
+function activityKindLabel(kind) {
+  if (kind === "execution") {
+    return "执行";
+  }
+  if (kind === "takeover") {
+    return "接管";
+  }
+  return "任务";
 }
 
 function parseCommaList(value) {

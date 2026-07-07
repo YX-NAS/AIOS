@@ -4,13 +4,14 @@ import threading
 from pathlib import Path
 
 from aios.core.executors import executor_summary
-from aios.core.executions import execution_summary
+from aios.core.executions import execution_summary, latest_execution_for_task
 from aios.core.instance_manager import DEFAULT_HOST, instance_status, project_id_for_root, state_dir
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
 from aios.core.runtime_policy import runtime_policy_summary
 from aios.core.scheduler import scheduler_summary
-from aios.core.takeover import pending_takeover_count
+from aios.core.takeover import pending_takeover_count, takeover_summary
+from aios.core.tasks import load_tasks
 from aios.utils.json_utils import read_json, write_json
 from aios.utils.text import now_iso, today
 
@@ -60,6 +61,9 @@ PRODUCTION_PROJECTS = [
         "priority": "P2",
     },
 ]
+
+PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+HEALTH_ORDER = {"blocked": 0, "broken": 1, "attention": 2, "setup": 3, "active": 4, "healthy": 5}
 
 
 def projects_registry_path() -> Path:
@@ -375,9 +379,20 @@ def launcher_workbench_summary(host: str = DEFAULT_HOST) -> dict:
     projects = list_project_summaries(host)
     candidates = production_project_candidates()
     health_counts: dict[str, int] = {}
+    actionable_ready: list[dict] = []
+    pending_takeovers: list[dict] = []
+    review_queue: list[dict] = []
+    active_runs: list[dict] = []
+    recent_activity: list[dict] = []
     for project in projects:
         key = project.get("health_state") or "unknown"
         health_counts[key] = health_counts.get(key, 0) + 1
+        detail = project_workbench_detail(project)
+        actionable_ready.extend(detail["actionable_ready"])
+        pending_takeovers.extend(detail["pending_takeovers"])
+        review_queue.extend(detail["review_queue"])
+        active_runs.extend(detail["active_runs"])
+        recent_activity.extend(detail["recent_activity"])
     focus_projects = sorted(
         projects,
         key=lambda project: (
@@ -389,6 +404,43 @@ def launcher_workbench_summary(host: str = DEFAULT_HOST) -> dict:
             -(project.get("today_open_tasks") or 0),
         ),
     )[:5]
+    actionable_ready = sorted(
+        actionable_ready,
+        key=lambda item: (
+            PRIORITY_ORDER.get(str(item.get("priority") or "").lower(), 9),
+            HEALTH_ORDER.get(str(item.get("project_health_state") or "").lower(), 9),
+            -(item.get("estimated_total_cost") is not None),
+            item.get("estimated_total_cost") or 0.0,
+            item.get("updated_at") or "",
+        ),
+    )[:8]
+    pending_takeovers = sorted(
+        pending_takeovers,
+        key=lambda item: (
+            HEALTH_ORDER.get(str(item.get("project_health_state") or "").lower(), 9),
+            item.get("created_at") or "",
+        ),
+        reverse=True,
+    )[:8]
+    review_queue = sorted(
+        review_queue,
+        key=lambda item: (
+            PRIORITY_ORDER.get(str(item.get("priority") or "").lower(), 9),
+            item.get("updated_at") or "",
+        ),
+        reverse=True,
+    )[:8]
+    active_runs = sorted(
+        active_runs,
+        key=lambda item: item.get("updated_at") or "",
+        reverse=True,
+    )[:8]
+    recent_activity = sorted(
+        recent_activity,
+        key=lambda item: item.get("happened_at") or "",
+        reverse=True,
+    )[:10]
+    infra_summary = build_infra_summary(projects)
     return {
         "generated_at": now_iso(),
         "project_count": len(projects),
@@ -405,5 +457,200 @@ def launcher_workbench_summary(host: str = DEFAULT_HOST) -> dict:
         "pending_takeover_count": sum(int(project.get("pending_takeover_count") or 0) for project in projects),
         "health_counts": health_counts,
         "focus_projects": focus_projects,
+        "actionable_ready": actionable_ready,
+        "pending_takeovers": pending_takeovers,
+        "review_queue": review_queue,
+        "active_runs": active_runs,
+        "infra_summary": infra_summary,
+        "recent_activity": recent_activity,
         "production_projects": candidates,
+    }
+
+
+def project_workbench_detail(project: dict) -> dict:
+    root = Path(project["root"])
+    if not root.exists() or not aios_path(root).exists():
+        return {
+            "actionable_ready": [],
+            "pending_takeovers": [],
+            "review_queue": [],
+            "active_runs": [],
+            "recent_activity": [],
+        }
+
+    tasks = {task["id"]: task for task in load_tasks(root)}
+    schedule = scheduler_summary(root)
+    takeover = takeover_summary(root)
+    actionable_ready: list[dict] = []
+    review_queue: list[dict] = []
+    active_runs: list[dict] = []
+    recent_activity: list[dict] = []
+
+    for item in schedule.get("items", []):
+        task = tasks.get(item["task_id"], {})
+        execution = latest_execution_for_task(root, item["task_id"]) or {}
+        entry = build_workbench_task_entry(project, task, item, execution)
+        if item.get("scheduler_state") == "ready":
+            actionable_ready.append(entry)
+        elif item.get("scheduler_state") == "review_pending":
+            review_queue.append(entry)
+        elif item.get("scheduler_state") == "active":
+            active_runs.append(entry)
+
+    pending_takeovers = sorted(
+        [
+            {
+                "project_id": project["project_id"],
+                "project_name": project["name"],
+                "project_root": project["root"],
+                "project_url": project.get("url"),
+                "project_health_state": project.get("health_state"),
+                "project_health_label": project.get("health_label"),
+                "takeover_id": entry.get("takeover_id"),
+                "task_id": entry.get("task_id"),
+                "task_title": entry.get("task_title"),
+                "failure_category": entry.get("failure_category"),
+                "reason": entry.get("reason"),
+                "suggested_action": entry.get("suggested_action"),
+                "created_at": entry.get("created_at"),
+                "execution_id": entry.get("execution_id"),
+            }
+            for entry in takeover.get("latest_pending", [])
+        ],
+        key=lambda item: item.get("created_at") or "",
+        reverse=True,
+    )
+
+    if project.get("last_execution_updated_at"):
+        recent_activity.append(
+            {
+                "project_id": project["project_id"],
+                "project_name": project["name"],
+                "kind": "execution",
+                "title": project.get("latest_task_title") or "最近执行更新",
+                "detail": f"执行状态：{project.get('latest_execution_status') or '-'}",
+                "happened_at": project["last_execution_updated_at"],
+            }
+        )
+    if project.get("last_task_updated_at"):
+        recent_activity.append(
+            {
+                "project_id": project["project_id"],
+                "project_name": project["name"],
+                "kind": "task",
+                "title": project.get("latest_task_title") or "最近任务更新",
+                "detail": f"下一步：{project.get('scheduler_next_action') or '-'}",
+                "happened_at": project["last_task_updated_at"],
+            }
+        )
+    if pending_takeovers:
+        latest_takeover = pending_takeovers[0]
+        recent_activity.append(
+            {
+                "project_id": project["project_id"],
+                "project_name": project["name"],
+                "kind": "takeover",
+                "title": latest_takeover.get("task_title") or latest_takeover.get("task_id") or "待接管任务",
+                "detail": latest_takeover.get("reason") or latest_takeover.get("suggested_action") or "需要人工接管",
+                "happened_at": latest_takeover.get("created_at"),
+            }
+        )
+
+    return {
+        "actionable_ready": actionable_ready,
+        "pending_takeovers": pending_takeovers,
+        "review_queue": review_queue,
+        "active_runs": active_runs,
+        "recent_activity": recent_activity,
+    }
+
+
+def build_workbench_task_entry(project: dict, task: dict, scheduler_item: dict, execution: dict) -> dict:
+    budget = scheduler_item.get("budget") or {}
+    return {
+        "project_id": project["project_id"],
+        "project_name": project["name"],
+        "project_root": project["root"],
+        "project_url": project.get("url"),
+        "project_health_state": project.get("health_state"),
+        "project_health_label": project.get("health_label"),
+        "task_id": scheduler_item.get("task_id"),
+        "task_title": scheduler_item.get("task_title") or task.get("title"),
+        "task_status": scheduler_item.get("task_status") or task.get("status"),
+        "priority": task.get("priority") or "medium",
+        "recommended_model": task.get("recommended_model"),
+        "scheduler_state": scheduler_item.get("scheduler_state"),
+        "next_action": scheduler_item.get("next_action"),
+        "reason": scheduler_item.get("reason"),
+        "updated_at": execution.get("updated_at") or task.get("updated_at") or task.get("created_at"),
+        "created_at": task.get("created_at"),
+        "execution_id": execution.get("execution_id"),
+        "execution_status": execution.get("status"),
+        "planned_model": execution.get("planned_model"),
+        "actual_model": execution.get("actual_model"),
+        "failure_category": execution.get("failure_category"),
+        "failure_summary": execution.get("failure_summary"),
+        "estimated_total_cost": budget.get("estimated_total_cost"),
+        "cost_currency": budget.get("cost_currency") or execution.get("cost_currency") or "USD",
+    }
+
+
+def build_infra_summary(projects: list[dict]) -> dict:
+    initialized_projects = [project for project in projects if project.get("initialized")]
+    alerts = [
+        {
+            "key": "missing_roots",
+            "label": "路径失效",
+            "value": len([project for project in projects if not project.get("root_exists", True)]),
+            "level": "danger",
+            "detail": "目录被移动或删除，需重新定位。",
+        },
+        {
+            "key": "waiting_setup",
+            "label": "待初始化",
+            "value": len([project for project in projects if project.get("health_state") == "setup"]),
+            "level": "warning",
+            "detail": "尚未建立 .aios 工作区。",
+        },
+        {
+            "key": "missing_index",
+            "label": "待扫描",
+            "value": len([project for project in initialized_projects if int(project.get("file_count") or 0) == 0]),
+            "level": "warning",
+            "detail": "项目没有索引，无法形成可靠上下文。",
+        },
+        {
+            "key": "model_not_ready",
+            "label": "模型未就绪项目",
+            "value": len([project for project in initialized_projects if int(project.get("provider_ready_count") or 0) == 0]),
+            "level": "warning",
+            "detail": "推荐模型缺少可用 provider 或鉴权。",
+        },
+        {
+            "key": "executor_not_ready",
+            "label": "执行器未就绪项目",
+            "value": len([project for project in initialized_projects if int(project.get("available_executor_count") or 0) == 0]),
+            "level": "warning",
+            "detail": "本机没有可执行命令行执行器。",
+        },
+        {
+            "key": "provider_handshake_failed",
+            "label": "Provider 握手失败",
+            "value": sum(int(project.get("provider_handshake_failed_count") or 0) for project in initialized_projects),
+            "level": "danger",
+            "detail": "网络可达性或 provider 地址配置异常。",
+        },
+        {
+            "key": "provider_api_failed",
+            "label": "API 权限失败",
+            "value": sum(int(project.get("provider_api_failed_count") or 0) for project in initialized_projects),
+            "level": "danger",
+            "detail": "鉴权变量或账户权限不可用。",
+        },
+    ]
+    return {
+        "alerts": alerts,
+        "running_projects": len([project for project in projects if project.get("running")]),
+        "healthy_projects": len([project for project in projects if project.get("health_state") in {"healthy", "active"}]),
+        "attention_projects": len([project for project in projects if project.get("health_state") in {"attention", "blocked", "broken", "setup"}]),
     }

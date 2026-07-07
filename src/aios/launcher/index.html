@@ -44,6 +44,48 @@
         </article>
       </section>
 
+      <section class="control-grid">
+        <article class="panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">立即执行</div>
+              <div class="panel-subtitle">已满足条件，可直接进入项目执行</div>
+            </div>
+          </div>
+          <div id="readyQueue" class="queue-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">待接管</div>
+              <div class="panel-subtitle">自动流程无法继续，需要人工介入</div>
+            </div>
+          </div>
+          <div id="takeoverQueue" class="queue-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">待验收</div>
+              <div class="panel-subtitle">代码已产出，等待 review 与收口</div>
+            </div>
+          </div>
+          <div id="reviewQueue" class="queue-list"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">执行中</div>
+              <div class="panel-subtitle">当前正在跑的任务与模型</div>
+            </div>
+          </div>
+          <div id="activeRuns" class="queue-list"></div>
+        </article>
+      </section>
+
       <section class="launcher-grid">
         <article class="panel">
           <div class="panel-header">
@@ -77,6 +119,28 @@
             </div>
           </div>
           <div id="projectList" class="project-list"></div>
+        </article>
+      </section>
+
+      <section class="monitor-grid">
+        <article class="panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">基础设施状态</div>
+              <div class="panel-subtitle">模型、执行器、索引和目录风险</div>
+            </div>
+          </div>
+          <div id="infraSummary" class="infra-grid"></div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header compact">
+            <div>
+              <div class="panel-title">最近活动</div>
+              <div class="panel-subtitle">跨项目的最近任务、执行与接管事件</div>
+            </div>
+          </div>
+          <div id="recentActivity" class="recent-list"></div>
         </article>
       </section>
 
