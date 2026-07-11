@@ -139,6 +139,9 @@ function renderProjects() {
             </div>
           </div>
           <div class="project-context">
+            <div><strong>当前目标：</strong>${project.current_goal_title || project.latest_goal || "暂无"}${project.current_goal_status ? ` · ${project.current_goal_status}` : ""}</div>
+            <div><strong>当前任务：</strong>${project.current_task_title || project.scheduler_next_task_title || "暂无"}${project.current_task_status ? ` · ${project.current_task_status}` : ""}</div>
+            <div><strong>目标进度：</strong>${project.current_goal_title ? `${project.progress_percent || 0}%` : "暂无活动目标"} · 下一步：${project.progress_next_action || project.scheduler_next_action || "-"}</div>
             <div><strong>最近目标：</strong>${project.latest_goal || "暂无"}</div>
             <div><strong>最近任务：</strong>${project.latest_task_title || "暂无"}</div>
             <div><strong>技术栈：</strong>${formatList(project.languages)} / ${formatList(project.frameworks)}</div>
@@ -149,6 +152,7 @@ function renderProjects() {
             <div class="small-note">Provider 握手：${project.provider_handshake_ready_count || 0} 正常 / ${project.provider_handshake_failed_count || 0} 失败 | API 权限：${project.provider_api_verified_count || 0} 通过 / ${project.provider_api_failed_count || 0} 失败</div>
             <div class="small-note">调度策略：${project.runtime_policy_dispatch_strategy || "default"} | 剩余预算：${formatCost(project.remaining_total_budget, project.cost_currency)} | 单次上限：${formatCost(project.runtime_policy_max_single_execution_cost, project.cost_currency)}</div>
             <div class="small-note">下一条任务：${project.scheduler_next_task_title || "-"}</div>
+            <div class="small-note">最近推进时间：${project.last_progress_at || "-"}</div>
           </div>
             <div class="project-actions">
               <button type="button" class="button primary open-project-button" data-project-id="${project.project_id}">打开项目</button>

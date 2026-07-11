@@ -143,6 +143,9 @@ def test_task_plan_draft_cli_roundtrip(tmp_path: Path, capsys) -> None:
 
 def test_task_create_uses_global_model_library_recommendation(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setattr("aios.core.router.model_runtime_status", lambda model: {"ready": False})
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     models = load_model_library()
     for model in models:
@@ -161,6 +164,9 @@ def test_task_create_uses_global_model_library_recommendation(tmp_path: Path, mo
 
 def test_task_create_falls_back_after_custom_model_deleted(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setattr("aios.core.router.model_runtime_status", lambda model: {"ready": False})
     main(["--root", str(tmp_path), "init", "--name", "demo"])
     create_model(None, "custom-bug", "Custom Bug", "custom", True, 1, ["bug_fix"])
     delete_model(None, "claude")

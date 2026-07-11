@@ -6,6 +6,7 @@ from aios.core.ccswitch import with_bridge_runtime_signal
 from aios.core.context_builder import inspect_context_pack
 from aios.core.executions import latest_execution_for_task
 from aios.core.models import get_model, model_runtime_status
+from aios.core.router import route_task
 from aios.core.runtime_policy import budget_guard_for_task, load_runtime_policy
 from aios.core.tasks import get_task, load_tasks
 
@@ -60,6 +61,8 @@ def scheduler_summary(root: Path) -> dict:
 
 
 def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> dict:
+    route = route_task(task, root)
+    effective_model = route.get("recommended_model") or task.get("recommended_model")
     execution = with_bridge_runtime_signal(root, latest_execution_for_task(root, task["id"]))
     bridge_confirmation_status = str(execution.get("ccswitch_bridge_effective_confirmation_status") or execution.get("ccswitch_bridge_confirmation_status") or "").strip() if execution else ""
     # CLI command executors pass the model directly via --model flag,
@@ -70,11 +73,11 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
     unmet_dependencies = [task_id for task_id in dependency_ids if task_map.get(task_id, {}).get("status") != "done"]
     pack_quality = "unknown"
     try:
-        warnings, severe_warnings = inspect_context_pack(root, task, task["recommended_model"])
+        warnings, severe_warnings = inspect_context_pack(root, task, effective_model)
         pack_quality = "warning" if severe_warnings else "ok"
     except Exception:  # noqa: BLE001
         warnings = []
-    model_block = _task_model_block_reason(task)
+    model_block = _task_model_block_reason(effective_model)
 
     if task["status"] == "done":
         scheduler_state = "done"
@@ -127,7 +130,7 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
         next_action = "fix_pack"
         reason = "Context Pack 质量存在强告警，建议先修复上下文后再执行。"
     else:
-        budget = budget_guard_for_task(root, task, task["recommended_model"])
+        budget = budget_guard_for_task(root, task, effective_model)
         if budget["status"] == "blocked":
             scheduler_state = "blocked"
             next_action = "adjust_budget"
@@ -137,12 +140,13 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
             next_action = "run_executor"
             reason = "依赖已满足，可以启动执行。"
     if 'budget' not in locals():
-        budget = budget_guard_for_task(root, task, task["recommended_model"]) if task["status"] != "done" else None
+        budget = budget_guard_for_task(root, task, effective_model) if task["status"] != "done" else None
 
     return {
         "task_id": task["id"],
         "task_title": task["title"],
         "task_status": task["status"],
+        "recommended_model": effective_model,
         "scheduler_state": scheduler_state,
         "next_action": next_action,
         "reason": reason,
@@ -159,8 +163,8 @@ def build_scheduler_item(root: Path, task: dict, task_map: dict[str, dict]) -> d
     }
 
 
-def _task_model_block_reason(task: dict) -> dict | None:
-    model_id = str(task.get("recommended_model") or "").strip()
+def _task_model_block_reason(model_id: str | None) -> dict | None:
+    model_id = str(model_id or "").strip()
     if not model_id:
         return None
     model = get_model(None, model_id)

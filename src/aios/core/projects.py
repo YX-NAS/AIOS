@@ -8,6 +8,7 @@ from aios.core.executions import execution_summary, latest_execution_for_task
 from aios.core.instance_manager import DEFAULT_HOST, instance_status, project_id_for_root, state_dir
 from aios.core.models import model_summary
 from aios.core.paths import aios_path
+from aios.core.progress import project_progress_summary
 from aios.core.runtime_policy import runtime_policy_summary
 from aios.core.scheduler import scheduler_summary
 from aios.core.takeover import pending_takeover_count, takeover_summary
@@ -146,6 +147,12 @@ def project_runtime_data(root: Path) -> dict:
             "frameworks": [],
             "latest_task_title": None,
             "latest_goal": None,
+            "current_goal_title": None,
+            "current_goal_status": None,
+            "current_task_title": None,
+            "current_task_status": None,
+            "progress_percent": 0,
+            "last_progress_at": None,
             "last_task_updated_at": None,
             "execution_count": 0,
             "active_execution_count": 0,
@@ -203,6 +210,9 @@ def project_runtime_data(root: Path) -> dict:
         ]
     )
     execution_data = execution_summary(root)
+    progress = project_progress_summary(root)
+    current_goal = progress.get("goal") or {}
+    current_task = progress.get("current_task") or {}
     health = project_health(
         {
             "root_exists": True,
@@ -234,6 +244,16 @@ def project_runtime_data(root: Path) -> dict:
         "frameworks": file_summary.get("frameworks", []),
         "latest_task_title": latest_task.get("title") if latest_task else None,
         "latest_goal": latest_goal,
+        "current_goal_title": current_goal.get("title"),
+        "current_goal_status": current_goal.get("status"),
+        "current_task_title": current_task.get("title"),
+        "current_task_status": current_task.get("status"),
+        "progress_percent": progress.get("progress_percent") or 0,
+        "last_progress_at": progress.get("last_progress_at"),
+        "current_goal_id": current_goal.get("goal_id"),
+        "current_task_id": current_task.get("id"),
+        "progress_next_action": progress.get("next_action"),
+        "progress_reason": progress.get("reason"),
         "last_task_updated_at": latest_task.get("updated_at") if latest_task else None,
         **execution_data,
         "ready_count": schedule["ready_count"],
@@ -578,7 +598,7 @@ def build_workbench_task_entry(project: dict, task: dict, scheduler_item: dict, 
         "task_title": scheduler_item.get("task_title") or task.get("title"),
         "task_status": scheduler_item.get("task_status") or task.get("status"),
         "priority": task.get("priority") or "medium",
-        "recommended_model": task.get("recommended_model"),
+        "recommended_model": scheduler_item.get("recommended_model") or task.get("recommended_model"),
         "scheduler_state": scheduler_item.get("scheduler_state"),
         "next_action": scheduler_item.get("next_action"),
         "reason": scheduler_item.get("reason"),

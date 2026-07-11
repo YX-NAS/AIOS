@@ -14,6 +14,7 @@ const state = {
   sessionSuggestions: [],
   selectedTaskId: null,
   runtimePolicy: null,
+  progress: null,
 };
 
 const elements = {
@@ -75,6 +76,8 @@ const elements = {
   taskForm: document.getElementById("taskForm"),
   packForm: document.getElementById("packForm"),
   completeForm: document.getElementById("completeForm"),
+  goalProgressEmpty: document.getElementById("goalProgressEmpty"),
+  goalProgressCard: document.getElementById("goalProgressCard"),
 };
 
 async function api(path, options = {}) {
@@ -155,6 +158,35 @@ function renderStatus() {
     .map((item) => `<span class="tag">${item}</span>`)
     .join("");
   renderRuntimePolicy();
+  renderGoalProgress();
+}
+
+function renderGoalProgress() {
+  const progress = state.progress;
+  const goal = progress?.goal;
+  if (!elements.goalProgressEmpty || !elements.goalProgressCard) return;
+  if (!goal) {
+    elements.goalProgressEmpty.classList.remove("hidden");
+    elements.goalProgressCard.classList.add("hidden");
+    return;
+  }
+  const task = progress.current_task;
+  const route = progress.route;
+  const counts = progress.state_counts || {};
+  elements.goalProgressEmpty.classList.add("hidden");
+  elements.goalProgressCard.classList.remove("hidden");
+  elements.goalProgressCard.innerHTML = `
+    <div class="goal-progress-heading"><div><div class="small-label">当前目标 · ${goal.status || "active"}</div><h2>${goal.title}</h2></div><div class="goal-progress-value">${progress.progress_percent || 0}%</div></div>
+    <div class="goal-progress-track"><span style="width:${Math.max(0, Math.min(100, progress.progress_percent || 0))}%"></span></div>
+    <div class="goal-progress-meta">已完成 ${progress.done_count || 0} / ${progress.task_count || 0} · 待执行 ${counts.ready || 0} · 执行中 ${counts.active || 0} · 待验收 ${counts.review_pending || 0}</div>
+    <div class="goal-current-task"><div class="small-label">现在该做什么</div><strong>${task ? `${task.id} · ${task.title}` : "当前没有可推进任务"}</strong><div class="muted">${task ? `推荐模型：${route?.recommended_model || task.recommended_model || "待路由"} · 下一步：${progress.next_action || "-"}` : progress.reason || "请检查任务依赖或模型状态。"}</div>${task ? '<button type="button" id="focusCurrentTaskButton" class="button primary">查看当前任务</button>' : ""}</div>
+  `;
+  document.getElementById("focusCurrentTaskButton")?.addEventListener("click", async () => {
+    state.selectedTaskId = task.id;
+    renderTasks();
+    await loadTaskInspector();
+    document.getElementById("inspector")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function renderRuntimePolicy() {
@@ -595,19 +627,23 @@ document.getElementById("planCancelButton")?.addEventListener("click", () => {
 });
 
 async function refreshDashboard() {
-  const [statusData, tasksData, packsData, handoffsData, schedulerData] = await Promise.all([
+  const [statusData, tasksData, packsData, handoffsData, schedulerData, progressData] = await Promise.all([
     api("/api/status"),
     api("/api/tasks"),
     api("/api/packs"),
     api("/api/handoffs"),
     api("/api/scheduler"),
+    api("/api/progress/current"),
   ]);
   state.status = statusData;
   state.tasks = tasksData.tasks;
   state.packs = packsData.packs;
   state.handoffs = handoffsData.handoffs;
   state.scheduler = schedulerData;
-  if (!state.selectedTaskId && state.tasks.length) {
+  state.progress = progressData;
+  if (!state.selectedTaskId && state.progress?.current_task?.id) {
+    state.selectedTaskId = state.progress.current_task.id;
+  } else if (!state.selectedTaskId && state.tasks.length) {
     state.selectedTaskId = sortByLatest(state.tasks)[0].id;
   }
   renderStatus();
@@ -672,12 +708,15 @@ elements.goalPlanForm.addEventListener("submit", async (event) => {
       goal: form.get("goal"),
       priority: form.get("priority"),
     };
-    // Preview first, don't create yet
-    const data = await api("/api/tasks/plan", { method: "POST", body: JSON.stringify(payload) });
-    state.planPreview = { goal: payload.goal, priority: payload.priority, tasks: data.tasks, draftId: data.draft_id };
+    const data = await api("/api/goals", { method: "POST", body: JSON.stringify(payload) });
+    state.planPreview = null;
     renderPlanPreview();
-    setActivity(`已生成拆分草案 ${data.draft_id}，预览 ${data.tasks.length} 条任务，确认后才会创建。`);
-  }, "目标拆分失败。");
+    formElement.reset();
+    state.selectedTaskId = data.progress?.current_task?.id || state.selectedTaskId;
+    await refreshDashboard();
+    await loadTaskInspector();
+    setActivity(`已创建目标 ${data.goal.goal_id} 并生成 ${data.tasks.length} 个任务。\n当前任务：${data.progress?.current_task?.title || "等待依赖"}`);
+  }, "创建目标失败。");
 });
 
 elements.runtimePolicyForm?.addEventListener("submit", async (event) => {
@@ -913,6 +952,9 @@ elements.copyCcswitchSessionHandoffButton.addEventListener("click", async () => 
 elements.runCcswitchBridgeButton.addEventListener("click", async () => {
   if (!state.selectedTaskId) {
     setActivity("请先选择任务。");
+    return;
+  }
+  if (!window.confirm("这会打开 CC Switch，并依次导入当前任务的 Provider 和提示词，然后打开终端恢复命令。是否继续？")) {
     return;
   }
   await runAction(async () => {

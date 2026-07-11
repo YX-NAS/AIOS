@@ -155,10 +155,12 @@ def test_pipeline_cli_integration(tmp_path: Path, monkeypatch) -> None:
     (tmp_path / "main.py").write_text("print('ok')\n", encoding="utf-8")
     main(["--root", str(tmp_path), "scan"])
     main(["--root", str(tmp_path), "task", "create", "Fix test bug", "--priority", "high"])
+    task = json.loads((tmp_path / ".aios" / "tasks.json").read_text(encoding="utf-8"))["tasks"][0]
 
     monkeypatch.setattr("aios.core.auto_switch.subprocess", unit_mock.MagicMock())
     # This should not raise
     main(["--root", str(tmp_path), "run", "pipeline", "--auto-switch", "--switch-delay", "0"])
+    assert latest_execution_for_task(tmp_path, task["id"]) is not None
 
 
 def test_pipeline_web_api(tmp_path: Path, monkeypatch) -> None:

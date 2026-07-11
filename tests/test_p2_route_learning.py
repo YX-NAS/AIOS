@@ -56,6 +56,97 @@ def test_resolve_models_preserves_rank_without_scores(tmp_path: Path) -> None:
     assert preferred.index("deepseek-v4-pro") < preferred.index("gpt-5.4-mini")
 
 
+def test_resolve_models_prefers_ready_model_over_not_ready_match(tmp_path: Path, monkeypatch) -> None:
+    from aios.core.models import save_model_handshakes
+    from aios.core.router import resolve_models_for_task
+
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    save_model_handshakes(
+        tmp_path,
+        {
+            "gpt-5.5": {
+                "model_id": "gpt-5.5",
+                "status": "failed",
+                "checked_at": "2026-07-11T12:00:00",
+                "http_status": None,
+                "latency_ms": 10.0,
+                "target_url": "https://api.openai.com/v1",
+                "reason": "Missing auth env vars: OPENAI_API_KEY",
+                "auth_probe_status": "skipped",
+            },
+            "deepseek-v4-pro": {
+                "model_id": "deepseek-v4-pro",
+                "status": "ok",
+                "checked_at": "2026-07-11T12:00:01",
+                "http_status": 401,
+                "latency_ms": 20.0,
+                "target_url": "https://api.deepseek.com/v1",
+                "reason": None,
+                "auth_probe_status": "ok",
+                "auth_probe_http_status": 200,
+                "auth_probe_target_url": "https://api.deepseek.com/v1/models",
+                "auth_probe_reason": None,
+            },
+        },
+    )
+
+    preferred, fallback = resolve_models_for_task(
+        tmp_path,
+        "complex_coding",
+        ["gpt-5.5", "deepseek-v4-pro"],
+        ["claude"],
+    )
+    assert preferred[0] == "deepseek-v4-pro"
+
+
+def test_route_task_replaces_stale_not_ready_recommended_model(tmp_path: Path, monkeypatch) -> None:
+    from aios.core.models import save_model_handshakes
+    from aios.core.router import route_task
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "test-deepseek-key")
+    main(["--root", str(tmp_path), "init", "--name", "demo"])
+    save_model_handshakes(
+        tmp_path,
+        {
+            "gpt-5.5": {
+                "model_id": "gpt-5.5",
+                "status": "failed",
+                "checked_at": "2026-07-11T12:00:00",
+                "http_status": None,
+                "latency_ms": 10.0,
+                "target_url": "https://api.openai.com/v1",
+                "reason": "Missing auth env vars: OPENAI_API_KEY",
+                "auth_probe_status": "skipped",
+            },
+            "deepseek-v4-pro": {
+                "model_id": "deepseek-v4-pro",
+                "status": "ok",
+                "checked_at": "2026-07-11T12:00:01",
+                "http_status": 401,
+                "latency_ms": 20.0,
+                "target_url": "https://api.deepseek.com/v1",
+                "reason": None,
+                "auth_probe_status": "ok",
+                "auth_probe_http_status": 200,
+                "auth_probe_target_url": "https://api.deepseek.com/v1/models",
+                "auth_probe_reason": None,
+            },
+        },
+    )
+    task = {
+        "id": "TASK-1",
+        "title": "实现登录功能",
+        "type": "complex_coding",
+        "complexity": "high",
+        "recommended_model": "gpt-5.5",
+    }
+    route = route_task(task, tmp_path)
+    assert route["recommended_model"] == "deepseek-v4-pro"
+
+
 def test_apply_learned_order_mixed_weights() -> None:
     weights = {("A", "coding"): 3.5, ("B", "coding"): 1.2, ("C", "coding"): 0.0}
     result = apply_learned_order(["C", "A", "B"], "coding", weights)

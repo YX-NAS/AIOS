@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -540,8 +541,16 @@ def _run_probe_request(
         headers=headers,
         method="GET",
     )
+    ssl_context = _certifi_ssl_context()
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
+        urlopen_kwargs = {"timeout": timeout_seconds}
+        if ssl_context is not None:
+            urlopen_kwargs["context"] = ssl_context
+        try:
+            response_ctx = urlopen(request, **urlopen_kwargs)
+        except TypeError:
+            response_ctx = urlopen(request, timeout=timeout_seconds)
+        with response_ctx as response:
             http_status = response.status
             status = "ok" if ok_http_status(http_status) else "failed"
             reason = None if status == "ok" else failure_reason(http_status)
@@ -561,6 +570,17 @@ def _run_probe_request(
         "latency_ms": round((time.perf_counter() - started) * 1000, 2),
         "reason": reason,
     }
+
+
+def _certifi_ssl_context() -> ssl.SSLContext | None:
+    try:
+        import certifi
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _clean_model_id(model_id: str) -> str:

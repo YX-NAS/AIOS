@@ -1,12 +1,12 @@
 [project]
 name = "aios-dev-center"
-version = "0.41.0"
+version = "0.42.0"
 description = "Local filesystem CLI for AI development project context, task routing, and context packs."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "AIOS" }]
-dependencies = []
+dependencies = ["certifi>=2026.6.17"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]

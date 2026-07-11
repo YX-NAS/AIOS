@@ -7,6 +7,7 @@ from aios.commands.ccswitch import add_ccswitch_parser, run_ccswitch
 from aios.commands.complete import add_complete_parser, run_complete
 from aios.commands.executor import add_executor_parser, run_executor
 from aios.commands.guard_cmd import add_guard_parser, run_guard
+from aios.commands.goal import add_goal_parser, run_goal
 from aios.commands.handoff import add_handoff_parser, run_handoff
 from aios.commands.init import add_init_parser, run_init
 from aios.commands.launcher import add_launcher_parser, run_launcher
@@ -34,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_ccswitch_parser(subparsers)
     add_executor_parser(subparsers)
     add_guard_parser(subparsers)
+    add_goal_parser(subparsers)
     add_model_parser(subparsers)
     add_repo_parser(subparsers)
     add_review_parser(subparsers)
@@ -61,6 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         "ccswitch": run_ccswitch,
         "executor": run_executor,
         "guard": run_guard,
+        "goal": run_goal,
         "model": run_model,
         "repo": run_repo,
         "review": run_review,

@@ -250,6 +250,17 @@ code { font-family: "SF Mono", "JetBrains Mono", "Fira Code", monospace; }
 .stack-form, .task-form { display: grid; gap: 8px; }
 .task-form { grid-template-columns: minmax(0, 1fr) 140px 120px; margin-bottom: 14px; }
 .goal-form { margin-bottom: 8px; }
+
+.progress-panel { margin-bottom: 16px; }
+.goal-progress-card { display: grid; gap: 12px; }
+.goal-progress-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.goal-progress-heading h2 { margin: 3px 0 0; font-size: 20px; }
+.goal-progress-value { color: var(--accent); font-size: 24px; font-weight: 700; white-space: nowrap; }
+.goal-progress-track { height: 8px; overflow: hidden; border-radius: 4px; background: var(--line); }
+.goal-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--accent); transition: width 0.2s ease; }
+.goal-progress-meta { color: var(--muted); font-size: 13px; }
+.goal-current-task { display: grid; gap: 7px; border-top: 1px solid var(--line); padding-top: 12px; }
+.goal-current-task .button { justify-self: start; margin-top: 2px; }
 label { display: grid; gap: 6px; }
 .checkbox-row {
   display: flex;
@@ -469,6 +480,7 @@ tr.task-row.active td { color: var(--accent); background: rgba(0, 229, 255, 0.05
     font-size: 15px;
   }
   .overview-grid { grid-template-columns: 1fr; }
+  .goal-progress-heading { align-items: flex-start; flex-direction: column; }
   .pagination-bar {
     align-items: stretch;
     flex-direction: column;

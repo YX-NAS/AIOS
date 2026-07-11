@@ -56,6 +56,11 @@ def initialize_project(root: Path, name: str, project_type: str, force: bool = F
         write_json(task_plans_json, {"drafts": []})
         created.append(task_plans_json)
 
+    goals_json = path / "goals.json"
+    if force or not goals_json.exists():
+        write_json(goals_json, {"goals": []})
+        created.append(goals_json)
+
     executions_json = path / "executions.json"
     if force or not executions_json.exists():
         write_json(executions_json, {"executions": []})

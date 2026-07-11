@@ -140,11 +140,17 @@ def prepare_manual_execution(
     )
     if start:
         set_task_status(root, task_id, "running")
+    progress = None
+    if task.get("goal_id"):
+        from aios.core.progress import advance_goal_progress
+
+        progress = advance_goal_progress(root, task["goal_id"])
     return {
         "task": get_task(root, task_id),
         "route": route,
         "handoff": handoff,
         "execution": execution,
+        "progress": progress,
     }
 
 
@@ -911,12 +917,19 @@ def finish_manual_execution(
             )
             execution = latest_execution_for_task(root, task_id)
 
+    progress = None
+    if task.get("goal_id"):
+        from aios.core.progress import advance_goal_progress
+
+        progress = advance_goal_progress(root, task["goal_id"])
+
     return {
         "task": task,
         "execution": execution or latest_execution_for_task(root, task_id),
         "git_commit": commit_result,
         "git_push": push_result,
         "git_pr": pr_result,
+        "progress": progress,
     }
 
 

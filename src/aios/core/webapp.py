@@ -58,6 +58,8 @@ from aios.core.tasks import (
 )
 from aios.core.bounded_search import context_search_summary as search_summary_fn
 from aios.core.guard import guard_summary as guard_status_fn
+from aios.core.goals import activate_goal, get_goal, list_goals
+from aios.core.progress import advance_goal_progress, create_goal_with_plan, empty_progress, project_progress_summary
 from aios.core.repo_map import load_repo_map, generate_repo_map
 from aios.core.review import get_review_for_task
 from aios.core.session_persist import restore_execution_from_snapshot
@@ -94,6 +96,17 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                     return self._send_json(self._status_payload())
                 if parsed.path == "/api/tasks":
                     return self._send_json({"tasks": load_tasks_safe(self.project_root)})
+                if parsed.path == "/api/goals":
+                    return self._send_json({"goals": list_goals(self.project_root) if aios_path(self.project_root).exists() else []})
+                if parsed.path == "/api/progress/current":
+                    progress = project_progress_summary(self.project_root) if aios_path(self.project_root).exists() else empty_progress()
+                    return self._send_json(progress)
+                if parsed.path.startswith("/api/goals/") and parsed.path.endswith("/progress"):
+                    goal_id = parsed.path.split("/")[-2]
+                    return self._send_json(advance_goal_progress(self.project_root, goal_id))
+                if parsed.path.startswith("/api/goals/"):
+                    goal_id = parsed.path.rsplit("/", 1)[-1]
+                    return self._send_json({"goal": get_goal(self.project_root, goal_id)})
                 if parsed.path == "/api/scheduler":
                     if not aios_path(self.project_root).exists():
                         return self._send_json(scheduler_summary_empty())
@@ -264,6 +277,24 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                         payload.get("acceptance") or None,
                     )
                     return self._send_json({"message": "Task created.", "task": task}, status=HTTPStatus.CREATED)
+                if parsed.path == "/api/goals":
+                    title = (payload.get("title") or payload.get("goal") or "").strip()
+                    if not title:
+                        raise ValueError("Goal title is required.")
+                    result = create_goal_with_plan(
+                        self.project_root,
+                        title,
+                        priority=payload.get("priority", "high"),
+                        summary=(payload.get("summary") or "").strip() or None,
+                    )
+                    return self._send_json({"message": "Goal created and split into tasks.", **result}, status=HTTPStatus.CREATED)
+                if parsed.path.startswith("/api/goals/") and parsed.path.endswith("/activate"):
+                    goal_id = parsed.path.split("/")[-2]
+                    goal = activate_goal(self.project_root, goal_id)
+                    return self._send_json({"message": "Goal activated.", "goal": goal, "progress": advance_goal_progress(self.project_root, goal_id)})
+                if parsed.path == "/api/progress/advance":
+                    goal_id = (payload.get("goal_id") or "").strip() or None
+                    return self._send_json(advance_goal_progress(self.project_root, goal_id))
                 if parsed.path == "/api/tasks/plan":
                     goal = (payload.get("goal") or "").strip()
                     if not goal:
@@ -741,6 +772,7 @@ def start_web_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> W
                 "enabled_executor_count": executor_summary()["enabled_executor_count"],
                 "available_executor_count": executor_summary()["available_executor_count"],
                 "runtime_policy": runtime_policy_summary(self.project_root) if initialized else runtime_policy_empty(),
+                "progress": project_progress_summary(self.project_root) if initialized else empty_progress(),
                 **(scheduler_summary(self.project_root) if initialized else scheduler_summary_empty()),
                 **(execution_summary(self.project_root) if initialized else execution_summary_empty()),
             }

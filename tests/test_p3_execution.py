@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import base64
 import subprocess
+import sys
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 import aios.core.ccswitch as ccswitch_core
@@ -387,6 +390,20 @@ def test_ccswitch_deeplink_cli_outputs_url_and_records_execution(tmp_path: Path,
     assert execution is not None
     assert execution["ccswitch_deeplink"].startswith("ccswitch://v1/import?")
     assert execution["ccswitch_deeplink_app"] == "codex"
+
+
+def test_ccswitch_prompt_deeplink_base64_encodes_and_url_escapes_content() -> None:
+    deeplink = ccswitch_core.build_prompt_deeplink_url(
+        app="codex",
+        name="AIOS Task",
+        content="# 标题\n\nA value with + / = characters.",
+        description="test",
+    )
+    parsed = urlparse(deeplink)
+    content = parse_qs(parsed.query)["content"][0]
+    assert base64.b64decode(content).decode("utf-8") == "# 标题\n\nA value with + / = characters."
+    assert "content=%23" not in deeplink
+    assert "%2B" in deeplink or "+" not in content
 
 
 def test_ccswitch_export_api_updates_execution_without_overwriting_planned_model(tmp_path: Path) -> None:
@@ -2641,6 +2658,47 @@ def test_model_probe_cli_marks_failed_when_provider_auth_probe_is_rejected(tmp_p
     assert "auth_probe_status: failed" in output
     assert "auth_probe_http_status: 401" in output
     assert "Provider auth probe rejected credentials with HTTP 401." in output
+
+
+def test_model_probe_cli_uses_certifi_ssl_context_when_available(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    class FakeResponse:
+        def __init__(self, status: int):
+            self.status = status
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeCertifi:
+        @staticmethod
+        def where() -> str:
+            return "/tmp/fake-certifi.pem"
+
+    captured_contexts: list[object] = []
+
+    def fake_default_context(*, cafile=None, capath=None, cadata=None):
+        assert cafile == "/tmp/fake-certifi.pem"
+        return "fake-ssl-context"
+
+    def fake_urlopen(request, timeout=3.0, context=None):
+        captured_contexts.append(context)
+        if request.full_url.endswith("/models"):
+            return FakeResponse(200)
+        return FakeResponse(401)
+
+    monkeypatch.setattr(models_core, "urlopen", fake_urlopen)
+    monkeypatch.setattr(models_core.ssl, "create_default_context", fake_default_context)
+    monkeypatch.setitem(sys.modules, "certifi", FakeCertifi)
+
+    assert main(["model", "probe", "gpt-5.5"]) == 0
+    output = capsys.readouterr().out
+    assert "gpt-5.5: ok" in output
+    assert captured_contexts == ["fake-ssl-context", "fake-ssl-context"]
 
 
 def test_status_cli_reports_provider_readiness(tmp_path: Path, monkeypatch, capsys) -> None:

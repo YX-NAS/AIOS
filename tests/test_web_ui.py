@@ -20,6 +20,9 @@ def request_json(base_url: str, path: str, method: str = "GET", payload: dict | 
 
 def test_web_ui_flow(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("AIOS_STATE_DIR", str(tmp_path / ".state"))
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setattr("aios.core.router.model_runtime_status", lambda model: {"ready": False})
     handle = start_web_server(tmp_path, port=0)
     try:
         status_code, status_payload = request_json(handle.url, "/api/status")
@@ -163,6 +166,8 @@ def test_web_ui_flow(tmp_path: Path, monkeypatch) -> None:
         assert 'id="packPagination"' in html
         assert 'id="sessionHistoryCard"' in html
         assert 'id="copyHistoryResumeCommandButton"' in html
+        assert 'id="goalProgressCard"' in html
+        assert "项目推进" in html
 
         with urlopen(f"{handle.url}/assets/app.js") as response:
             js = response.read().decode("utf-8")
@@ -171,6 +176,7 @@ def test_web_ui_flow(tmp_path: Path, monkeypatch) -> None:
         assert "renderPagination(elements.packPagination" in js
         assert "renderSessionHistory()" in js
         assert "runtimePolicyForm" in js
+        assert "renderGoalProgress" in js
     finally:
         handle.close()
 

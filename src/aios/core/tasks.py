@@ -129,6 +129,8 @@ def build_task_record(
     depends_on_task_ids: list[str] | None = None,
     plan_draft_id: str | None = None,
     plan_node_id: str | None = None,
+    goal_id: str | None = None,
+    sequence_order: int | None = None,
 ) -> dict:
     resolved_type = task_type or classify_task(title)
     rule = DEFAULT_ROUTING.get(resolved_type, DEFAULT_ROUTING["simple_coding"])
@@ -160,13 +162,23 @@ def build_task_record(
         task["plan_draft_id"] = plan_draft_id
     if plan_node_id:
         task["plan_node_id"] = plan_node_id
+    if goal_id:
+        task["goal_id"] = goal_id
+    if sequence_order is not None:
+        task["sequence_order"] = sequence_order
     return task
 
 
-def plan_goal(root: Path, goal: str, priority: str = "high", create: bool = True) -> list[dict]:
+def plan_goal(
+    root: Path,
+    goal: str,
+    priority: str = "high",
+    create: bool = True,
+    goal_id: str | None = None,
+) -> list[dict]:
     nodes = build_goal_nodes(goal, priority)
     tasks = load_tasks(root)
-    planned = materialize_plan_nodes(root, tasks, nodes, goal)
+    planned = materialize_plan_nodes(root, tasks, nodes, goal, goal_id=goal_id)
     if create:
         tasks.extend(planned)
         save_tasks(root, tasks)
@@ -303,10 +315,11 @@ def materialize_plan_nodes(
     nodes: list[dict],
     goal: str,
     plan_draft_id: str | None = None,
+    goal_id: str | None = None,
 ) -> list[dict]:
     planned: list[dict] = []
     node_to_task_id: dict[str, str] = {}
-    for node in nodes:
+    for sequence_order, node in enumerate(nodes, start=1):
         node_id = node.get("node_id") or node.get("id")
         record = build_task_record(
             root,
@@ -319,6 +332,8 @@ def materialize_plan_nodes(
             source_goal=goal,
             plan_draft_id=plan_draft_id,
             plan_node_id=node_id,
+            goal_id=goal_id,
+            sequence_order=sequence_order,
         )
         planned.append(record)
         node_to_task_id[node_id] = record["id"]

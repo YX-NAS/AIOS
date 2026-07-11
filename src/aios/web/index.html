@@ -74,6 +74,19 @@
           </article>
         </section>
 
+        <section id="progress" class="panel progress-panel">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">项目推进</div>
+              <div class="panel-subtitle">当前目标、唯一下一步与完成进度</div>
+            </div>
+          </div>
+          <div id="goalProgressEmpty" class="empty-state compact">
+            <p>还没有项目目标。输入一句目标后，AIOS 会生成任务树并标出第一步。</p>
+          </div>
+          <div id="goalProgressCard" class="goal-progress-card hidden"></div>
+        </section>
+
         <section class="workspace-grid">
           <section class="content-column">
             <article id="scan" class="panel">
@@ -166,7 +179,7 @@
               <div class="panel-header">
                 <div>
                   <div class="panel-title">任务台</div>
-                  <div class="panel-subtitle">创建任务、选择任务、查看当前建议模型</div>
+                  <div class="panel-subtitle">输入项目目标生成任务树，或补充独立任务</div>
                 </div>
               </div>
               <form id="goalPlanForm" class="task-form goal-form">
@@ -176,7 +189,7 @@
                   <option value="medium">medium</option>
                   <option value="low">low</option>
                 </select>
-                <button type="submit" class="button secondary">目标拆分</button>
+                <button type="submit" class="button primary">创建并拆分目标</button>
               </form>
               <form id="taskForm" class="task-form">
                 <input name="title" placeholder="例如：修复登录报错并补回归测试" required />
@@ -275,7 +288,7 @@
                 <button id="copyCcswitchDeeplinkButton" type="button" class="button secondary wide">复制 ccswitch Deep Link</button>
                 <button id="copyCcswitchProviderDeeplinkButton" type="button" class="button secondary wide">复制 Provider Deep Link</button>
                 <button id="copyCcswitchSessionHandoffButton" type="button" class="button secondary wide">复制 Session Handoff</button>
-                <button id="runCcswitchBridgeButton" type="button" class="button primary wide">一键桥接到 CC Switch 与终端</button>
+                <button id="runCcswitchBridgeButton" type="button" class="button primary wide">打开 CC Switch 并导入当前任务</button>
                 <button id="copyCcswitchButton" type="button" class="button subtle wide">复制 ccswitch JSON</button>
                 <button id="copyHandoffButton" type="button" class="button secondary wide">生成并复制任务交接单</button>
                 <button id="copyCurrentPackButton" type="button" class="button subtle wide hidden">复制当前任务最新 Context Pack</button>

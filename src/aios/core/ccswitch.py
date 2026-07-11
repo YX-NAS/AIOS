@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import shlex
 import subprocess
@@ -338,7 +339,9 @@ def build_prompt_deeplink_url(app: str, name: str, content: str, description: st
         "resource": "prompt",
         "app": app,
         "name": name,
-        "content": content,
+        # CC Switch expects prompt content as Base64. urlencode then escapes
+        # '+' and '=' safely for the custom URL query string.
+        "content": base64.b64encode(content.encode("utf-8")).decode("ascii"),
     }
     if description:
         params["description"] = description

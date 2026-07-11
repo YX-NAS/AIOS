@@ -24,6 +24,7 @@ from aios.core.ccswitch import (
 from aios.core.executions import (
     latest_execution_for_task,
     load_executions,
+    prepare_manual_execution,
     save_executions,
 )
 from aios.core.executors import (
@@ -208,9 +209,26 @@ def run_auto_pipeline_step(
         return {"pipeline_status": "blocked", "reason": f"Cannot auto-execute in state: {next_action}", "scheduler": summary}
 
     task = get_task(root, next_task_id)
-    resolved_model = model or task.get("recommended_model") or ""
+    scheduler_item = next((item for item in summary.get("items", []) if item.get("task_id") == next_task_id), {})
+    resolved_model = model or scheduler_item.get("recommended_model") or task.get("recommended_model") or ""
 
     pipeline_steps: list[dict] = []
+
+    # A scheduler-ready task has no execution record yet. Prepare the same
+    # artifacts as the manual entrypoint before switching or invoking a CLI.
+    if not latest_execution_for_task(root, next_task_id):
+        prepared = prepare_manual_execution(root, next_task_id, model=resolved_model, start=True)
+        resolved_model = prepared["execution"].get("planned_model") or resolved_model
+        pipeline_steps.append(
+            {
+                "step": "prepare_execution",
+                "result": {
+                    "execution_id": prepared["execution"]["execution_id"],
+                    "pack_path": prepared["execution"].get("pack_path"),
+                    "handoff_path": prepared["execution"].get("handoff_path"),
+                },
+            }
+        )
 
     # Step 1: Auto-switch model (if enabled and not CLI mode)
     switch_result = None
